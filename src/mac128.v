@@ -7,7 +7,7 @@ module mac128
   parameter c_diag        = 1, // 0: No LED diagnostcs, 1: LED diagnostics
   parameter c_mhz         = 27000000, // Clock speed of CPU clock
   parameter c_screen_base = 24'h3fa700,
-  parameter c_screen_top = c_screen_base + 24'h5800
+  parameter c_screen_top =  c_screen_base + 24'h5580
 )
 (
   input         clk_25mhz,
@@ -176,19 +176,63 @@ module mac128
   reg  ipl2_n = 1'b1;
   wire [15:0] ram_dout;
   wire [15:0] rom_dout;
-  wire [15:0] vga_dout;
-  wire [15:0] cpu_din;           // Data to CPU
-  wire [15:0] cpu_dout;          // Data from CPU
-  wire [23:1] cpu_a;             // Address
-  wire [24:0] cpu_addr = {cpu_a, 1'b0};
+  wire [15:0] cpu_din;                  // Data to CPU
+  wire [15:0] cpu_dout;                 // Data from CPU
+  wire [23:1] cpu_a;                    // 16-bit word address
+  wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
 
-  wire halt_n = ~R_cpu_control[2]; // prevent running SDRAM junk code
-  wire ram_cs = (cpu_addr >= 24'h060000 && cpu_addr < 24'h062000);
+  wire halt_n = ~R_cpu_control[2];      // Not yet used
+
+  reg [23:0] start_ram;                 // Start of ram
+  reg [23:0] end_ram;                   // End of ram + 1
+
+  wire ram_cs = (cpu_addr >= start_ram && cpu_addr < end_ram);
+
+  // VIA addresses
   wire via_porta = (cpu_addr == 24'heffffe);
+  wire via_portb = (cpu_addr == 24'hefe1fe);
+  wire via_dira = (cpu_addr == 24'hefe7fe);
+  wire via_dirb = (cpu_addr == 24'hefe5fe);
+  wire via_tim1_count_l = (cpu_addr == 24'hefe9fe);
+  wire via_tim1_count_h = (cpu_addr == 24'hefebfe);
+  wire via_tim1_latch_l = (cpu_addr == 24'hefe9fe);
+  wire via_tim1_latch_h = (cpu_addr == 24'hefebfe);
+  wire via_tim2_count_l = (cpu_addr == 24'heff1fe);
+  wire via_tim2_count_h = (cpu_addr == 24'heff3fe);
+  wire via_shift_reg = (cpu_addr == 24'heff5fe);
+  wire via_aux_ctl = (cpu_addr == 24'heff7fe);
+  wire via_periph_ctl = (cpu_addr == 24'heff9fe);
+  wire via_int_flag_reg = (cpu_addr == 24'heffbfe);
+  wire via_int_en_reg = (cpu_addr == 24'heffdfe);
 
-  assign vpa_n = !(cpu_addr >= 24'h800000);
+  reg overlayed;     // Set when ram and rom addresses changed
+  reg vsync_int = 1; // Always set vsync for the moment
+ 
+  assign vpa_n = 1;  // Currently not used
+  wire [7:0] int_reg = {6'b0, vsync_int, 1'b0}; // Pending interrupts, currently just vsync
 
-  assign cpu_din = !vpa_n ? 0 : ram_cs ? ram_dout : rom_dout;
+  // CPU data in multiplexing
+  assign cpu_din = via_int_flag_reg ? {int_reg, int_reg} : 
+                   (cpu_addr >= 24'h800000) ? 0 : // Zero for all other peripheral addresses
+                   ram_cs ? ram_dout : 
+                   rom_dout;
+
+  // VIA register processsing
+  always @(posedge clk_cpu) begin
+    if (reset) begin
+      start_ram = 24'h600000;
+      end_ram <= 24'h620000;
+      overlayed <= 0;
+    end else begin
+      if (via_porta && !cpu_rw) begin
+        if (cpu_dout[12] == 0) begin // OVERLAY
+          overlayed <= 1;
+          start_ram <= 0;            // Move ram to address zero
+          end_ram <= 24'h400000;     // and rom to 24'h400000. Max ram = 4MB
+        end
+      end
+    end
+  end
 
   // Generate phi1 and phi2 clock enables for the CPU
   generate
@@ -270,11 +314,11 @@ module mac128
     .rst (~clk_sdram_locked),
     .din (cpu_dout),
     .dout(ram_dout),
-    .addr({1'b0, cpu_a[23:1]} - 24'h60000),
+    .addr({1'b0, cpu_a[23:1] - start_ram[23:1]}),
     .udsn(cpu_uds_n),
     .ldsn(cpu_lds_n),
     .asn (cpu_as_n),
-    .rw  (cpu_rw || (cpu_a < 24'h60000)),
+    .rw  (cpu_rw || !ram_cs),
 
     // SDRAM side
     .sd_clk (sdram_clk),
@@ -306,29 +350,26 @@ module mac128
   // ===============================================================
   // Video
   // ===============================================================
-  wire [14:1] vid_addr; // Used by vdp
-  wire [15:0] vid_dout; // Used by vdp
-  wire        vid_cs = (cpu_addr >= c_screen_base && cpu_addr < c_screen_top);
-  wire        vga_wr = !cpu_rw && vid_cs;
+  wire [14:1] vid_b_addr; 
+  wire [15:0] vid_b_dout; 
+  wire [15:0] vid_a_dout;
+  wire        vid_cs = (cpu_addr >= c_screen_base) && (cpu_addr < c_screen_top);
+  wire        vid_a_wr = (cpu_rw == 0) && vid_cs;
   wire        vga_de;
-  wire [24:0] vga_addr = cpu_addr - c_screen_top; 
+  wire [23:0] vid_a_addr = cpu_addr - c_screen_base;
 
   vram video_ram (
     .clk_a(clk_cpu),
-    .addr_a(vga_addr[13:1]),
-    .we_a(vga_wr),
+    .addr_a(vid_a_addr[14:1]),
+    .we_a(vid_a_wr),
     .din_a(cpu_dout),
     .ub_a(!cpu_uds_n),
     .lb_a(!cpu_lds_n),
-    .dout_a(vga_dout),
+    .dout_a(vid_a_dout),
     .clk_b(clk_vga),
-    .addr_b(vid_addr),
-    .dout_b(vid_dout)
+    .addr_b(vid_b_addr),
+    .dout_b(vid_b_dout)
   );
-
-  always @(posedge clk_cpu) begin
-    diag16 <= {red, green};
-  end
 
   video vga (
     .clk(clk_vga),
@@ -339,8 +380,8 @@ module mac128
     .vga_de(vga_de),
     .vga_hs(hSync),
     .vga_vs(vSync),
-    .vid_addr(vid_addr),
-    .vid_dout(vid_dout)
+    .vid_addr(vid_b_addr),
+    .vid_dout(vid_b_dout)
   );
 
   // ===============================================================
@@ -360,9 +401,9 @@ module mac128
   );
 
   // ===============================================================
-  // Diagnostic leds
+  // Diagnostic leds and lcd
   // ===============================================================
-  assign leds = {!vpa_n, vid_cs, hSync, vSync, !cpu_rw, reset};
+  assign leds = {overlayed, !vpa_n, vid_cs, !cpu_rw, reset};
 
   generate
   if(c_lcd_hex)
@@ -371,9 +412,8 @@ module mac128
   reg [127:0] R_display;
   // HEX decoder does printf("%16X\n%16X\n", R_display[63:0], R_display[127:64]);
   always @(posedge clk_cpu)
-    R_display <= { 48'b0, rom_dout, // 2nd HEX row
-                   8'b0, cpu_dout, cpu_din, cpu_a, 1'b0 }; // 1st HEX row
-    //R_display = 128'h123456789abcdef0fedcba9876543210;
+    R_display <= { 32'b0, ram_dout, rom_dout, // 2nd HEX row
+                   8'b0, cpu_dout, cpu_din, cpu_addr}; // 1st HEX row
 
   parameter C_color_bits = 16;
   wire [7:0] x;
