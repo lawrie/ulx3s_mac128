@@ -180,40 +180,41 @@ module mac128
   wire [15:0] cpu_dout;                 // Data from CPU
   wire [23:1] cpu_a;                    // 16-bit word address
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
-
-  wire halt_n = ~R_cpu_control[2];      // Not yet used
-
   reg [23:0] start_ram;                 // Start of ram
   reg [23:0] end_ram;                   // End of ram + 1
-
+  wire [23:0] ram_addr = cpu_addr - start_ram;
+  wire halt_n = ~R_cpu_control[2] && ~btn[1];      // Not yet used
   wire ram_cs = (cpu_addr >= start_ram && cpu_addr < end_ram);
 
   // VIA addresses
-  wire via_porta = (cpu_addr == 24'heffffe);
-  wire via_portb = (cpu_addr == 24'hefe1fe);
-  wire via_dira = (cpu_addr == 24'hefe7fe);
-  wire via_dirb = (cpu_addr == 24'hefe5fe);
-  wire via_tim1_count_l = (cpu_addr == 24'hefe9fe);
-  wire via_tim1_count_h = (cpu_addr == 24'hefebfe);
-  wire via_tim1_latch_l = (cpu_addr == 24'hefe9fe);
-  wire via_tim1_latch_h = (cpu_addr == 24'hefebfe);
-  wire via_tim2_count_l = (cpu_addr == 24'heff1fe);
-  wire via_tim2_count_h = (cpu_addr == 24'heff3fe);
-  wire via_shift_reg = (cpu_addr == 24'heff5fe);
-  wire via_aux_ctl = (cpu_addr == 24'heff7fe);
-  wire via_periph_ctl = (cpu_addr == 24'heff9fe);
-  wire via_int_flag_reg = (cpu_addr == 24'heffbfe);
-  wire via_int_en_reg = (cpu_addr == 24'heffdfe);
+  wire via_porta = !vma_n && (cpu_addr == 24'heffffe);
+  wire via_portb = !vma_n && (cpu_addr == 24'hefe1fe);
+  wire via_dira = !vma_n && (cpu_addr == 24'hefe7fe);
+  wire via_dirb = !vma_n && (cpu_addr == 24'hefe5fe);
+  wire via_tim1_count_l = !vma_n && (cpu_addr == 24'hefe9fe);
+  wire via_tim1_count_h = !vma_n && (cpu_addr == 24'hefebfe);
+  wire via_tim1_latch_l = !vma_n && (cpu_addr == 24'hefe9fe);
+  wire via_tim1_latch_h = !vma_n && (cpu_addr == 24'hefebfe);
+  wire via_tim2_count_l = !vma_n && (cpu_addr == 24'heff1fe);
+  wire via_tim2_count_h = !vma_n && (cpu_addr == 24'heff3fe);
+  wire via_shift_reg = !vma_n && (cpu_addr == 24'heff5fe);
+  wire via_aux_ctl = !vma_n && (cpu_addr == 24'heff7fe);
+  wire via_periph_ctl = !vma_n && (cpu_addr == 24'heff9fe);
+  wire via_int_flag_reg = !vma_n && (cpu_addr == 24'heffbfe);
+  wire via_int_en_reg = !vma_n && (cpu_addr == 24'heffdfe);
 
   reg overlayed;     // Set when ram and rom addresses changed
   reg vsync_int = 1; // Always set vsync for the moment
  
-  assign vpa_n = 1;  // Currently not used
+  assign vpa_n = !cpu_a[23] | cpu_as_n;
   wire [7:0] int_reg = {6'b0, vsync_int, 1'b0}; // Pending interrupts, currently just vsync
+  reg [15:0] ticks;
 
   // CPU data in multiplexing
   assign cpu_din = via_int_flag_reg ? {int_reg, int_reg} : 
-                   (cpu_addr >= 24'h800000) ? 0 : // Zero for all other peripheral addresses
+                   cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
+                   cpu_addr == 24'h16a ? ticks :         // ticks temporary hack
+                   cpu_a[23] ? 0 : // Zero for all other peripheral addresses
                    ram_cs ? ram_dout : 
                    rom_dout;
 
@@ -230,6 +231,9 @@ module mac128
           start_ram <= 0;            // Move ram to address zero
           end_ram <= 24'h400000;     // and rom to 24'h400000. Max ram = 4MB
         end
+      end
+      if (cpu_rw && cpu_addr == 24'h16a) begin
+          ticks <= ticks + 1;
       end
     end
   end
@@ -314,7 +318,7 @@ module mac128
     .rst (~clk_sdram_locked),
     .din (cpu_dout),
     .dout(ram_dout),
-    .addr({1'b0, cpu_a[23:1] - start_ram[23:1]}),
+    .addr({1'b0, ram_addr[23:1]}),
     .udsn(cpu_uds_n),
     .ldsn(cpu_lds_n),
     .asn (cpu_as_n),
@@ -353,10 +357,10 @@ module mac128
   wire [14:1] vid_b_addr; 
   wire [15:0] vid_b_dout; 
   wire [15:0] vid_a_dout;
-  wire        vid_cs = (cpu_addr >= c_screen_base) && (cpu_addr < c_screen_top);
+  wire        vid_cs = (ram_addr >= c_screen_base) && (ram_addr < c_screen_top);
   wire        vid_a_wr = (cpu_rw == 0) && vid_cs;
   wire        vga_de;
-  wire [23:0] vid_a_addr = cpu_addr - c_screen_base;
+  wire [23:0] vid_a_addr = ram_addr - c_screen_base;
 
   vram video_ram (
     .clk_a(clk_cpu),
@@ -403,7 +407,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign leds = {overlayed, !vpa_n, vid_cs, !cpu_rw, reset};
+  assign leds = {ram_cs, overlayed, !vpa_n, vid_cs, !cpu_rw, reset};
 
   generate
   if(c_lcd_hex)
