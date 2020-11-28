@@ -1,4 +1,13 @@
 `default_nettype none
+
+`define INT_ONESEC              0
+`define INT_VBLANK              1
+`define INT_KEYREADY            2
+`define INT_KEYBIT              3
+`define INT_KEYCLK              4
+`define INT_T2                  5
+`define INT_T1                  6
+
 module mac128
 #(
   parameter c_slowdown    = 0, // CPU clock slowdown 2^n times (try 20-22)
@@ -186,20 +195,7 @@ module mac128
 
   // VIA addresses
   wire via_porta = !vma_n && (cpu_addr == 24'heffffe);
-  wire via_portb = !vma_n && (cpu_addr == 24'hefe1fe);
-  wire via_dira = !vma_n && (cpu_addr == 24'hefe7fe);
-  wire via_dirb = !vma_n && (cpu_addr == 24'hefe5fe);
-  wire via_tim1_count_l = !vma_n && (cpu_addr == 24'hefe9fe);
-  wire via_tim1_count_h = !vma_n && (cpu_addr == 24'hefebfe);
-  wire via_tim1_latch_l = !vma_n && (cpu_addr == 24'hefe9fe);
-  wire via_tim1_latch_h = !vma_n && (cpu_addr == 24'hefebfe);
-  wire via_tim2_count_l = !vma_n && (cpu_addr == 24'heff1fe);
-  wire via_tim2_count_h = !vma_n && (cpu_addr == 24'heff3fe);
-  wire via_shift_reg = !vma_n && (cpu_addr == 24'heff5fe);
-  wire via_aux_ctl = !vma_n && (cpu_addr == 24'heff7fe);
-  wire via_periph_ctl = !vma_n && (cpu_addr == 24'heff9fe);
   wire via_int_flag_reg = !vma_n && (cpu_addr == 24'heffbfe);
-  wire via_int_en_reg = !vma_n && (cpu_addr == 24'heffdfe);
 
   reg overlaid;     // Set when ram and rom addresses changed
   reg vsync_int = 1; // Always set vsync for the moment
@@ -232,21 +228,23 @@ module mac128
   end
 
   // VIA register processing
-  reg [7:0]  via_sr;
-  reg [7:0]  via_acr;
-  reg        kbd_in_strobe, kbd_out_strobe;
-  reg [7:0]  via_a_data_out, via_b_data_out;
+  reg [7:0]  via_sr;                                                // Shift register
+  reg [7:0]  via_acr;                                               // Auxilliary control register
+  reg        kbd_in_strobe, kbd_out_strobe;                         // Keyboard strobes
+  reg [7:0]  via_a_data_out, via_b_data_out;                        // Port A and B data
   reg        via_b0_ddr;
-  reg [6:0]  via_ifr;
-  reg [6:0]  via_ier;
-  reg [15:0] via_timer1_count, via_timer1_latch, via_timer2_count;
-  reg [7:0]  kbd_in_data, kbd_out_data;
+  reg [6:0]  via_ifr;                                               // Interupt flag register
+  reg [6:0]  via_ier;                                               // Interupt enable register
+  reg [15:0] via_timer1_count, via_timer1_latch, via_timer2_count;  // Timer registers
+  reg [7:0]  kbd_in_data, kbd_out_data;                             // Keyboard data
   reg [7:0]  via_data_out_hi;
   reg [7:0]  via_timer2_latch_low;
   reg        via_timer2_armed;
   reg        mouse_y2, mouse_x2, mouse_button;
   reg        rtc_data;
   reg        scc_wreq;
+
+  wire       via_irq = (via_ifr & via_ier) == 0;
 
   // Shift register for keyboard
   always @(posedge clk_cpu) begin
@@ -306,7 +304,75 @@ module mac128
   assign audio_l = via_a_data_out[2:0];
   assign audio_r = audio_l;
 
-  // Via register read
+  wire [7:0] data_in_hi = cpu_dout[15:8];
+
+  // VIA timer should be 0.78336 MHz - this is close enough
+  reg [4:0] clk_div;
+  wire timer_strobe = (clk_div == 0);
+  always @(posedge clk_cpu) clk_div <= clk_div + 1; 
+
+  // VIA register writes
+  always @(posedge clk_cpu) begin
+    if (reset) begin
+      via_b0_ddr <= 1;
+      via_a_data_out <= 8'b01111111;
+      via_b_data_out <= 8'b11111111;
+      via_ifr <= 0;
+      via_ier <= 0;
+      via_acr <= 0;
+      via_timer1_count <= 0;
+      via_timer1_latch <= 0;
+      via_timer2_count <= 0;
+      via_timer2_latch_low <= 0;
+      via_timer2_armed <= 0;
+    end else begin
+      if (via_cs & !cpu_uds_n) begin
+        if (!cpu_rw) begin // writes to VIA registers
+          case(cpu_a[12:9])
+            4'h0: via_b_data_out <= data_in_hi;
+            4'h2: via_b0_ddr <= data_in_hi[0];
+            4'h4: via_timer1_count[7:0] <= data_in_hi;
+            4'h5: via_timer1_count[15:8] <= data_in_hi;
+            4'h6: via_timer1_latch[7:0] <= data_in_hi;
+            4'h7: via_timer1_latch[15:8] <= data_in_hi;
+            4'h8: via_timer2_latch_low <= data_in_hi;
+            4'h9: begin
+                    via_timer2_count[15:8] <= data_in_hi;
+                    via_timer2_count[7:0] <= via_timer2_latch_low;
+                    via_timer2_armed <= 1;
+                    via_ifr[`INT_T2] <= 0;
+                  end
+            4'hA: if (via_acr[4:2] == 3'b111) via_ifr[`INT_KEYREADY] <= 1;
+            4'hB: via_acr <= data_in_hi;
+            4'hD: via_ifr <= via_ifr & ~data_in_hi[6:0];
+            4'hE: if (data_in_hi[7]) via_ier <= via_ier | data_in_hi[6:0];
+                  else via_ier <= via_ier & ~data_in_hi[6:0];
+            4'hF: via_a_data_out <= data_in_hi;
+          endcase
+        end else begin // register reads triggering interrupts
+          case (cpu_a[12:9])
+            4'h0: begin
+                    via_ifr[`INT_KEYCLK] <= 0;
+                    via_ifr[`INT_KEYBIT] <= 0;
+                  end
+            4'h8: via_ifr[`INT_T2] <= 0;
+            4'hA: via_ifr[`INT_KEYREADY] <= 0;
+           4'hF: begin
+                   via_ifr[`INT_ONESEC] <= 0;
+                   via_ifr[`INT_VBLANK] <= 0;
+                 end
+          endcase
+        end
+      end
+      if (vSync == 0 & old_vSync == 1) begin
+        via_ifr[`INT_VBLANK] <= 1;
+        if (vsync_cnt == 59) via_ifr[`INT_ONESEC] <= 1;
+      end
+      
+    end
+  end
+
+  // VIA register read
   always @(8) begin
     via_data_out_hi = 8'hbe;
 
