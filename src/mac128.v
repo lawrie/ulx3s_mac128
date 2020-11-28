@@ -116,6 +116,7 @@ module mac128
   assign usb_fpga_pu_dp = 1;
   assign usb_fpga_pu_dn = 1;
 
+  // Uart passthru to ESP32
   assign wifi_rxd = ftdi_txd;
   assign ftdi_rxd = wifi_txd;
 
@@ -143,7 +144,7 @@ module mac128
   endgenerate
 
   // ===============================================================
-  // Diagnostic leds
+  // Diagnostic leds using 2 Digilent 8 Led Pmods
   // ===============================================================
   reg [15:0] diag16 = 0;
 
@@ -189,22 +190,37 @@ module mac128
   wire [15:0] cpu_dout;                 // Data from CPU
   wire [23:1] cpu_a;                    // 16-bit word address
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
-  reg [23:0] start_ram;                 // Start of ram
+  wire        halt_n = ~R_cpu_control[2] && ~btn[1]; 
+  
+  assign      vpa_n = !cpu_a[23] | cpu_as_n;
+  
+  // VIA registers
+  reg [7:0]   via_sr;                                                // Shift register
+  reg [7:0]   via_acr;                                               // Auxilliary control register
+  reg         kbd_in_strobe, kbd_out_strobe;                         // Keyboard strobes
+  reg [7:0]   via_a_data_out, via_b_data_out;                        // Port A and B data
+  reg         via_b0_ddr;
+  reg [6:0]   via_ifr;                                               // Interupt flag register
+  reg [6:0]   via_ier;                                               // Interupt enable register
+  reg [15:0]  via_timer1_count, via_timer1_latch, via_timer2_count;  // Timer registers
+  reg [7:0]   kbd_in_data, kbd_out_data;                             // Keyboard data
+  reg [7:0]   via_data_out_hi;
+  reg [7:0]   via_timer2_latch_low;
+  reg         via_timer2_armed;
+  reg         mouse_y2, mouse_x2, mouse_button;
+  reg         rtc_data;
+  reg         scc_wreq;
+
+  wire        via_irq = (via_ifr & via_ier) == 0;
+  wire        overlaid = !via_a_data_out[4];     // Set when ram and rom addresses changed
+  wire [23:0] start_ram = overlaid ? 24'h0 : 24'h600000; // Start of ram
   wire [23:0] ram_addr = cpu_addr - start_ram;
-  wire halt_n = ~R_cpu_control[2] && ~btn[1];      // Not yet used
 
-  // VIA addresses
-  wire via_porta = !vma_n && (cpu_addr == 24'heffffe);
-  wire via_int_flag_reg = !vma_n && (cpu_addr == 24'heffbfe);
+  wire        via_porta = !vma_n && (cpu_addr == 24'heffffe);
+  reg [15:0]  ticks;
 
-  reg overlaid;     // Set when ram and rom addresses changed
-  reg vsync_int = 1; // Always set vsync for the moment
- 
-  assign vpa_n = !cpu_a[23] | cpu_as_n;
-  wire [7:0] int_reg = {6'b0, vsync_int, 1'b0}; // Pending interrupts, currently just vsync
-  reg [15:0] ticks;
-
-  reg via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
+  // Chip select registers
+  reg         via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
 
   // Address decoding
   always @(*) begin
@@ -216,35 +232,16 @@ module mac128
     rom_cs = 0;
 
     casez(cpu_a[23:20]) 
-      4'b00??: if (overlaid) ram_cs <= 1;
-               else rom_cs <= 1;
-      4'b0100: rom_cs <= 1;
-      4'b0101: if (cpu_a[19:12] == 8'h80) scsi_cs <= 1;
-      4'b0110: if (!overlaid) ram_cs <= 1;
-      4'b10?1: scc_cs <= 1;
-      4'b1101: iwm_cs <= 1;
-      4'b1110: via_cs <= 1;
+      4'b00??: if (overlaid) ram_cs = 1;
+               else rom_cs = 1;
+      4'b0100: rom_cs = 1;
+      4'b0101: if (cpu_a[19:12] == 8'h80) scsi_cs = 1;
+      4'b0110: if (!overlaid) ram_cs = 1;
+      4'b10?1: scc_cs = 1;
+      4'b1101: iwm_cs = 1;
+      4'b1110: via_cs = 1;
     endcase
   end
-
-  // VIA register processing
-  reg [7:0]  via_sr;                                                // Shift register
-  reg [7:0]  via_acr;                                               // Auxilliary control register
-  reg        kbd_in_strobe, kbd_out_strobe;                         // Keyboard strobes
-  reg [7:0]  via_a_data_out, via_b_data_out;                        // Port A and B data
-  reg        via_b0_ddr;
-  reg [6:0]  via_ifr;                                               // Interupt flag register
-  reg [6:0]  via_ier;                                               // Interupt enable register
-  reg [15:0] via_timer1_count, via_timer1_latch, via_timer2_count;  // Timer registers
-  reg [7:0]  kbd_in_data, kbd_out_data;                             // Keyboard data
-  reg [7:0]  via_data_out_hi;
-  reg [7:0]  via_timer2_latch_low;
-  reg        via_timer2_armed;
-  reg        mouse_y2, mouse_x2, mouse_button;
-  reg        rtc_data;
-  reg        scc_wreq;
-
-  wire       via_irq = (via_ifr & via_ier) == 0;
 
   // Shift register for keyboard
   always @(posedge clk_cpu) begin
@@ -265,28 +262,14 @@ module mac128
     end
   end
 
-  // Process overlay bit
+  // Hack until interrupts working
   always @(posedge clk_cpu) begin
-    if (reset) begin
-      start_ram = 24'h600000;
-      overlaid <= 0;
-    end else begin
-      if (via_porta && !cpu_rw) begin
-        if (cpu_dout[12] == 0) begin // OVERLAY
-          overlaid <= 1;
-          start_ram <= 0;            // Move ram to address zero
-        end
-      end
-      if (cpu_rw && cpu_addr == 24'h16a) begin // Hack until interrupts working
-          ticks <= ticks + 1;
-      end
-    end
+    if (cpu_rw && cpu_addr == 24'h16a) ticks <= ticks + 1;
   end
 
   // Count vsyncs for a second timer
   reg [5:0] vsync_cnt;
   reg old_vSync;
-  reg [15:0] timer;
 
   always @(posedge clk_cpu) begin
     old_vSync <= vSync;
@@ -294,17 +277,18 @@ module mac128
       vsync_cnt <= vsync_cnt + 1;
       if (vsync_cnt == 59) begin
         vsync_cnt <= 0;
-        timer <= timer + 1;
       end
     end
   end
 
   wire load_t2 = via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'h9;
 
-  assign audio_l = via_a_data_out[2:0];
+  assign audio_l = {4{via_b_data_out[7]}};
   assign audio_r = audio_l;
 
   wire [7:0] data_in_hi = cpu_dout[15:8];
+
+  always @(posedge clk_cpu) diag16 <= {1'b0, via_ier, 1'b0,  via_ifr};
 
   // VIA timer should be 0.78336 MHz - this is close enough
   reg [4:0] clk_div;
@@ -329,25 +313,28 @@ module mac128
       if (via_cs & !cpu_uds_n) begin
         if (!cpu_rw) begin // writes to VIA registers
           case(cpu_a[12:9])
-            4'h0: via_b_data_out <= data_in_hi;
-            4'h2: via_b0_ddr <= data_in_hi[0];
-            4'h4: via_timer1_count[7:0] <= data_in_hi;
-            4'h5: via_timer1_count[15:8] <= data_in_hi;
-            4'h6: via_timer1_latch[7:0] <= data_in_hi;
-            4'h7: via_timer1_latch[15:8] <= data_in_hi;
-            4'h8: via_timer2_latch_low <= data_in_hi;
-            4'h9: begin
+            4'h0: via_b_data_out <= data_in_hi;                            // Port B
+                                                                           // ???
+            4'h2: via_b0_ddr <= data_in_hi[0];                             // Direction B
+                                                                           // Direction A
+            4'h4: via_timer1_count[7:0] <= data_in_hi;                     // Timer1 Count Lo
+            4'h5: via_timer1_count[15:8] <= data_in_hi;                    // Timer1 Count Hi
+            4'h6: via_timer1_latch[7:0] <= data_in_hi;                     // Timer1 Latch Lo
+            4'h7: via_timer1_latch[15:8] <= data_in_hi;                    // Timer1 Latch Hi
+            4'h8: via_timer2_latch_low <= data_in_hi;                      // Timer2_Count_Lo
+            4'h9: begin                                                    // Timer2 Count Hi
                     via_timer2_count[15:8] <= data_in_hi;
                     via_timer2_count[7:0] <= via_timer2_latch_low;
                     via_timer2_armed <= 1;
                     via_ifr[`INT_T2] <= 0;
                   end
-            4'hA: if (via_acr[4:2] == 3'b111) via_ifr[`INT_KEYREADY] <= 1;
-            4'hB: via_acr <= data_in_hi;
-            4'hD: via_ifr <= via_ifr & ~data_in_hi[6:0];
-            4'hE: if (data_in_hi[7]) via_ier <= via_ier | data_in_hi[6:0];
-                  else via_ier <= via_ier & ~data_in_hi[6:0];
-            4'hF: via_a_data_out <= data_in_hi;
+            4'hA: if (via_acr[4:2] == 3'b111) via_ifr[`INT_KEYREADY] <= 1; // Shift  Register
+            4'hB: via_acr <= data_in_hi;                                   // Auxilliary Control Reg
+                                                                           // Peripheral Control Reg
+            4'hD: via_ifr <= via_ifr & ~data_in_hi[6:0];                   // Interrupt Flag Register
+            4'hE: if (data_in_hi[7]) via_ier <= via_ier | data_in_hi[6:0]; // Interrupt Enable Register
+                  else via_ier <= via_ier & ~data_in_hi[6:0];              // Port B
+            4'hF: via_a_data_out <= data_in_hi;                          
           endcase
         end else begin // register reads triggering interrupts
           case (cpu_a[12:9])
@@ -388,15 +375,15 @@ module mac128
       4'h9: via_data_out_hi = via_timer2_count[15:8];
       4'hA: via_data_out_hi = via_sr;
       4'hB: via_data_out_hi = via_acr;
-      4'hC: via_data_out_hi = 0;
+      4'hC: via_data_out_hi = 0; // PCR
       4'hD: via_data_out_hi = {via_ifr & via_ier == 0, via_ifr};
       4'hE: via_data_out_hi = {1'b0, via_ier};
-      4'hF: via_data_out_hi <= {scc_wreq, via_a_data_out[6:0]};
+      4'hF: via_data_out_hi = {scc_wreq, via_a_data_out[6:0]};
     endcase
   end
 
   // CPU data in multiplexing
-  assign cpu_din = via_int_flag_reg ? {int_reg, int_reg} : 
+  assign cpu_din = via_cs ? {via_data_out_hi, 8'hEF} :   // VIA
                    cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
                    cpu_addr == 24'h16a ? ticks :         // ticks temporary hack
                    cpu_a[23] ? 0 : // Zero for all other peripheral addresses
