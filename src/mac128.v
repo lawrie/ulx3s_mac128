@@ -56,7 +56,7 @@ module mac128
   output        oled_dc,
   output        oled_resn,
   // Leds
-  output [7:0]  leds
+  output [7:0]  led
 );
 
   // ===============================================================
@@ -111,7 +111,7 @@ module mac128
   assign ftdi_rxd = wifi_txd;
 
   // ===============================================================
-  // Optional VGA output
+  // VGA output (output pins optional, if HDMI used)
   // ===============================================================
   wire   [7:0]  red;
   wire   [7:0]  green;
@@ -231,7 +231,43 @@ module mac128
     endcase
   end
 
-  // VIA register processsing
+  // VIA register processing
+  reg [7:0]  via_sr;
+  reg [7:0]  via_acr;
+  reg        kbd_in_strobe, kbd_out_strobe;
+  reg [7:0]  via_a_data_out, via_b_data_out;
+  reg        via_b0_ddr;
+  reg [6:0]  via_ifr;
+  reg [6:0]  via_ier;
+  reg [15:0] via_timer1_count, via_timer1_latch, via_timer2_count;
+  reg [7:0]  kbd_in_data, kbd_out_data;
+  reg [7:0]  via_data_out_hi;
+  reg [7:0]  via_timer2_latch_low;
+  reg        via_timer2_armed;
+  reg        mouse_y2, mouse_x2, mouse_button;
+  reg        rtc_data;
+  reg        scc_wreq;
+
+  // Shift register for keyboard
+  always @(posedge clk_cpu) begin
+    if (reset) begin
+      via_sr <= 0;
+    end else begin
+      if (via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'hA) via_sr <= cpu_dout[15:8];
+      if (via_acr[4:2] == 3'b011 && kbd_in_strobe) via_sr <= kbd_in_data;
+    end
+  end
+
+  // Generate keyboard out strobe 
+  always @(posedge clk_cpu) begin
+    if (reset) begin
+      kbd_out_strobe <= 0;
+    end else begin
+      kbd_out_strobe = (via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'hA && via_acr[4:2] == 3'b111);
+    end
+  end
+
+  // Process overlay bit
   always @(posedge clk_cpu) begin
     if (reset) begin
       start_ram = 24'h600000;
@@ -247,6 +283,50 @@ module mac128
           ticks <= ticks + 1;
       end
     end
+  end
+
+  // Count vsyncs for a second timer
+  reg [5:0] vsync_cnt;
+  reg old_vSync;
+  reg [15:0] timer;
+
+  always @(posedge clk_cpu) begin
+    old_vSync <= vSync;
+    if (vSync == 0 && old_vSync == 1) begin
+      vsync_cnt <= vsync_cnt + 1;
+      if (vsync_cnt == 59) begin
+        vsync_cnt <= 0;
+        timer <= timer + 1;
+      end
+    end
+  end
+
+  wire load_t2 = via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'h9;
+
+  assign audio_l = via_a_data_out[2:0];
+  assign audio_r = audio_l;
+
+  // Via register read
+  always @(8) begin
+    via_data_out_hi = 8'hbe;
+
+    case(cpu_a[12:9])
+      4'h0: via_data_out_hi = {via_b_data_out[7], ~hSync, mouse_y2, mouse_x2, mouse_button, via_b_data_out[2:1], via_b0_ddr ? via_b_data_out[0] : rtc_data};
+      4'h2: via_data_out_hi = {7'b1000011, via_b0_ddr};
+      4'h3: via_data_out_hi = 8'b01111111;
+      4'h4: via_data_out_hi = via_timer1_count[7:0];
+      4'h5: via_data_out_hi = via_timer1_count[15:8];
+      4'h6: via_data_out_hi = via_timer1_latch[7:0];
+      4'h7: via_data_out_hi = via_timer1_latch[15:8];
+      4'h8: via_data_out_hi = via_timer2_count[7:0];
+      4'h9: via_data_out_hi = via_timer2_count[15:8];
+      4'hA: via_data_out_hi = via_sr;
+      4'hB: via_data_out_hi = via_acr;
+      4'hC: via_data_out_hi = 0;
+      4'hD: via_data_out_hi = {via_ifr & via_ier == 0, via_ifr};
+      4'hE: via_data_out_hi = {1'b0, via_ier};
+      4'hF: via_data_out_hi <= {scc_wreq, via_a_data_out[6:0]};
+    endcase
   end
 
   // CPU data in multiplexing
@@ -407,22 +487,6 @@ module mac128
     .vid_dout(vid_b_dout)
   );
 
-  // Count vsyncs for a second timer
-  reg [5:0] vsync_cnt;
-  reg old_vSync;
-  reg [15:0] timer;
-
-  always @(posedge clk_cpu) begin
-    old_vSync <= vSync;
-    if (vSync == 0 && old_vSync == 1) begin
-      vsync_cnt <= vsync_cnt + 1;
-      if (vsync_cnt == 59) begin
-        vsync_cnt <= 0;
-        timer <= timer + 1;
-      end
-    end
-  end
-
   // ===============================================================
   // Convert VGA to HDMI
   // ===============================================================
@@ -442,7 +506,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign leds = {ram_cs, overlaid, !vpa_n, vid_cs, !cpu_rw, reset};
+  assign led = {ram_cs, overlaid, !vpa_n, vid_cs, !cpu_rw, reset};
 
   generate
   if(c_lcd_hex)
