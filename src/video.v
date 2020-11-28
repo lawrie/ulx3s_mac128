@@ -49,13 +49,21 @@ module video (
 
   wire [8:0] x = hc - HB;
   wire [8:0] y = vc - VB;
-  assign vid_addr = {y, x[8:4]};
+  wire [8:0] x16 = x + 16;
+
+  assign vid_addr = {y, x16[8:4]};
 
   wire hBorder = (hc < (HB + HBadj) || hc >= HA - (HB + HBadj));
   wire vBorder = (vc < VB || vc >= VA - VB);
   wire border = hBorder || vBorder;
-  wire pixel = vid_dout[~x[3:0]];
 
+  reg [15:0] pixel_data;
+  always @(posedge clk) begin
+    if (hc[3:0] == 15) pixel_data <= vid_dout;
+    else pixel_data <= {pixel_data[14:0], 1'b0};
+  end
+  
+  wire pixel = pixel_data[15];
   wire [7:0] green = border ? 8'b0 : {8{pixel}};
   wire [7:0] red   = border ? 8'b0 : {8{pixel}};
   wire [7:0] blue  = border ? 8'b0 : {8{pixel}};

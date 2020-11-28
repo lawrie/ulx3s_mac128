@@ -1,4 +1,4 @@
-VERILOG = ../src/mac128.v ../src/vram.v ../src/sdram.v \
+VERILOG = ../src/mac128.v ../src/iwm.v ../src/vram.v ../src/sdram.v \
 	  ../src/fx68k/fx68k.v ../src/fx68k/fx68kAlu.v ../src/fx68k/uaddrPla.v \
           ../src/hdmi.v ../src/ps2.v \
           ../src/rom.v  ../src/video.v ../src/ram.v \

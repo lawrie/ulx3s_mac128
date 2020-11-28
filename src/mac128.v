@@ -181,10 +181,8 @@ module mac128
   wire [23:1] cpu_a;                    // 16-bit word address
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
   reg [23:0] start_ram;                 // Start of ram
-  reg [23:0] end_ram;                   // End of ram + 1
   wire [23:0] ram_addr = cpu_addr - start_ram;
   wire halt_n = ~R_cpu_control[2] && ~btn[1];      // Not yet used
-  wire ram_cs = (cpu_addr >= start_ram && cpu_addr < end_ram);
 
   // VIA addresses
   wire via_porta = !vma_n && (cpu_addr == 24'heffffe);
@@ -203,12 +201,53 @@ module mac128
   wire via_int_flag_reg = !vma_n && (cpu_addr == 24'heffbfe);
   wire via_int_en_reg = !vma_n && (cpu_addr == 24'heffdfe);
 
-  reg overlayed;     // Set when ram and rom addresses changed
+  reg overlaid;     // Set when ram and rom addresses changed
   reg vsync_int = 1; // Always set vsync for the moment
  
   assign vpa_n = !cpu_a[23] | cpu_as_n;
   wire [7:0] int_reg = {6'b0, vsync_int, 1'b0}; // Pending interrupts, currently just vsync
   reg [15:0] ticks;
+
+  reg via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
+
+  // Address decoding
+  always @(*) begin
+    via_cs = 0;
+    scc_cs = 0;
+    iwm_cs = 0;
+    scsi_cs = 0;
+    ram_cs = 0;
+    rom_cs = 0;
+
+    casez(cpu_a[23:20]) 
+      4'b00??: if (overlaid) ram_cs <= 1;
+               else rom_cs <= 1;
+      4'b0100: rom_cs <= 1;
+      4'b0101: if (cpu_a[19:12] == 8'h80) scsi_cs <= 1;
+      4'b0110: if (!overlaid) ram_cs <= 1;
+      4'b10?1: scc_cs <= 1;
+      4'b1101: iwm_cs <= 1;
+      4'b1110: via_cs <= 1;
+    endcase
+  end
+
+  // VIA register processsing
+  always @(posedge clk_cpu) begin
+    if (reset) begin
+      start_ram = 24'h600000;
+      overlaid <= 0;
+    end else begin
+      if (via_porta && !cpu_rw) begin
+        if (cpu_dout[12] == 0) begin // OVERLAY
+          overlaid <= 1;
+          start_ram <= 0;            // Move ram to address zero
+        end
+      end
+      if (cpu_rw && cpu_addr == 24'h16a) begin // Hack until interrupts working
+          ticks <= ticks + 1;
+      end
+    end
+  end
 
   // CPU data in multiplexing
   assign cpu_din = via_int_flag_reg ? {int_reg, int_reg} : 
@@ -217,26 +256,6 @@ module mac128
                    cpu_a[23] ? 0 : // Zero for all other peripheral addresses
                    ram_cs ? ram_dout : 
                    rom_dout;
-
-  // VIA register processsing
-  always @(posedge clk_cpu) begin
-    if (reset) begin
-      start_ram = 24'h600000;
-      end_ram <= 24'h620000;
-      overlayed <= 0;
-    end else begin
-      if (via_porta && !cpu_rw) begin
-        if (cpu_dout[12] == 0) begin // OVERLAY
-          overlayed <= 1;
-          start_ram <= 0;            // Move ram to address zero
-          end_ram <= 24'h400000;     // and rom to 24'h400000. Max ram = 4MB
-        end
-      end
-      if (cpu_rw && cpu_addr == 24'h16a) begin
-          ticks <= ticks + 1;
-      end
-    end
-  end
 
   // Generate phi1 and phi2 clock enables for the CPU
   generate
@@ -388,6 +407,22 @@ module mac128
     .vid_dout(vid_b_dout)
   );
 
+  // Count vsyncs for a second timer
+  reg [5:0] vsync_cnt;
+  reg old_vSync;
+  reg [15:0] timer;
+
+  always @(posedge clk_cpu) begin
+    old_vSync <= vSync;
+    if (vSync == 0 && old_vSync == 1) begin
+      vsync_cnt <= vsync_cnt + 1;
+      if (vsync_cnt == 59) begin
+        vsync_cnt <= 0;
+        timer <= timer + 1;
+      end
+    end
+  end
+
   // ===============================================================
   // Convert VGA to HDMI
   // ===============================================================
@@ -407,7 +442,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign leds = {ram_cs, overlayed, !vpa_n, vid_cs, !cpu_rw, reset};
+  assign leds = {ram_cs, overlaid, !vpa_n, vid_cs, !cpu_rw, reset};
 
   generate
   if(c_lcd_hex)
