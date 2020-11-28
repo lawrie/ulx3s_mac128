@@ -5,7 +5,7 @@ module mac128
   parameter c_lcd_hex     = 1, // SPI LCD HEX decoder
   parameter c_vga_out     = 0, // 0: Just HDMI, 1: VGA and HDMI
   parameter c_diag        = 1, // 0: No LED diagnostcs, 1: LED diagnostics
-  parameter c_mhz         = 27000000, // Clock speed of CPU clock
+  parameter c_mhz         = 25000000, // Clock speed of CPU clock
   parameter c_screen_base = 24'h3fa700,
   parameter c_screen_top =  c_screen_base + 24'h5580
 )
@@ -68,10 +68,10 @@ module mac128
   ecp5pll
   #(
       .in_hz( 25*1000000),
-    .out0_hz(135*1000000),
-    .out1_hz( 27*1000000),
-    .out2_hz(135*1000000),                // SDRAM core
-    .out3_hz(135*1000000), .out3_deg(180) // SDRAM chip 45-330:ok 0-30:not
+    .out0_hz(125*1000000),
+    .out1_hz( 25*1000000),
+    .out2_hz(125*1000000),                // SDRAM core
+    .out3_hz(125*1000000), .out3_deg(180) // SDRAM chip 45-330:ok 0-30:not
   )
   ecp5pll_inst
   (
