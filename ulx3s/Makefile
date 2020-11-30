@@ -2,6 +2,8 @@ VERILOG = ../src/mac128.v ../src/iwm.v ../src/vram.v ../src/sdram.v \
 	  ../src/fx68k/fx68k.v ../src/fx68k/fx68kAlu.v ../src/fx68k/uaddrPla.v \
           ../src/hdmi.v ../src/ps2.v \
           ../src/rom.v  ../src/video.v ../src/ram.v \
+          ../src/osd/osd.v ../src/osd/spi_osd.v \
+          ../src/osd/spi_ram_btn.v ../src/osd/spirw_slave_v.v \
           ../src/spi_display/lcd_video.v \
           ../src/spi_display/hex_decoder_v.v \
 	  ../src/ecp5pll.sv

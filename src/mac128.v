@@ -41,7 +41,7 @@ module mac128
   output        wifi_rxd,  // SPI from ESP32
   input         wifi_gpio16, // sclk
   input         wifi_gpio17, // cs
-  //output        wifi_gpio0,
+  output        wifi_gpio0,
 
   inout         sd_clk, sd_cmd,
   inout   [3:0] sd_d,
@@ -184,6 +184,7 @@ module mac128
   wire ipl1_n;
   wire ipl2_n;
   wire [15:0] ram_dout;
+  wire [15:0] low_ram_dout;
   wire [15:0] rom_dout;
   wire [15:0] cpu_din;                  // Data to CPU
   wire [15:0] cpu_dout;                 // Data from CPU
@@ -292,7 +293,7 @@ module mac128
 
   
   always @(posedge clk_cpu) begin
-    if (cpu_rw && ram_cs && cpu_din != 0) diag16 <= cpu_din;
+    if (cpu_rw && ram_cs && ram_addr == 24'h64 && ram_dout != 16'hf007 && ram_dout != 16'hf00f && ram_dout != 16'hff00) diag16 <= ram_dout;
   end
 
   // VIA timer should be 0.78336 MHz - this is close enough
@@ -392,6 +393,7 @@ module mac128
                    cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
                    cpu_addr == 24'h16a ? ticks :         // ticks temporary hack
                    cpu_a[23] ? 0 :                       // Zero for all other peripheral addresses
+                   ram_cs && ram_addr < 2048 ? low_ram_dout :
                    ram_cs ? ram_dout : 
                    rom_dout;
 
@@ -465,21 +467,106 @@ module mac128
     .dout(rom_dout)
   );
 
+  // ====================================================
+  // Joystick for OSD control and games
+  // ===============================================================
+  reg [6:0] R_btn_joy;
+  always @(posedge clk_cpu)
+    R_btn_joy <= btn;
+
+  // ===============================================================
+  // SPI Slave for RAM and CPU control
+  // ===============================================================
+  wire [15:0] ram_do; // from SDRAM chip
+  wire        spi_ram_wr, spi_ram_rd;
+  wire [31:0] spi_ram_addr;
+  wire  [7:0] spi_floppy_do;
+  wire  [7:0] spi_ram_di = spi_ram_addr[31:24]==8'hD1 ? spi_floppy_do : (spi_ram_addr[0] ? ram_do[7:0] : ram_do[15:8]);
+  wire  [7:0] spi_ram_do;
+  reg         floppy_req = 0;
+
+  assign sd_d[0] = 1'bz;
+  assign sd_d[3] = 1'bz; // FPGA pin pullup sets SD card inactive at SPI bus
+
+  wire spi_irq;
+  spi_ram_btn
+  #(
+    .c_sclk_capable_pin(1'b0),
+    .c_addr_bits(32)
+  )
+  spi_ram_btn_inst
+  (
+    .clk(clk_cpu),
+    .csn(~wifi_gpio17),
+    .sclk(wifi_gpio16),
+    .mosi(sd_d[1]), // wifi_gpio4
+    .miso(sd_d[2]), // wifi_gpio12
+    .btn(R_btn_joy),
+    .irq(spi_irq),
+    .mdv_req(floppy_req),
+    .mdv_req_type(8'h01),
+    .wr(spi_ram_wr),
+    .rd(spi_ram_rd),
+    .addr(spi_ram_addr),
+    .data_in(spi_ram_di),
+    .data_out(spi_ram_do)
+  );
+
+
+  // Used for interrupt to ESP32
+  assign wifi_gpio0 = ~spi_irq;
+
+  reg [7:0] R_spi_ram_byte[0:1];
+  reg R_spi_ram_wr;
+  reg spi_ram_word_wr;
+  always @(posedge clk_cpu)
+  begin
+    R_spi_ram_wr <= spi_ram_wr;
+    if(spi_ram_wr == 1'b1)
+    begin
+      if(spi_ram_addr[31:24] == 8'hFF)
+        R_cpu_control <= spi_ram_do;
+      else
+        R_spi_ram_byte[spi_ram_addr[0]] <= spi_ram_do;
+      if(R_spi_ram_wr == 1'b0)
+      begin
+        if(spi_ram_addr[31:24] == 8'h00 && spi_ram_addr[0] == 1'b1)
+          spi_ram_word_wr <= 1'b1;
+      end
+    end
+    else
+      spi_ram_word_wr <= 1'b0;
+  end
+  wire [15:0] ram_di = { R_spi_ram_byte[0], R_spi_ram_byte[1] }; // to SDRAM chip
+
   // ===============================================================
   // SDRAM
   // ===============================================================
 
+  // Use BRAM for first 1024 words as temporary fix
+  ram ram_i (
+    .clk(clk_cpu),
+    .addr(ram_addr[10:1]),
+    .din(cpu_dout),
+    .we(ram_cs && !cpu_rw && ram_addr < 2048),
+    .dout(low_ram_dout),
+    .ub(!cpu_uds_n),
+    .lb(!cpu_lds_n)
+  );
+
+  wire we = spi_ram_word_wr;
+  wire re = spi_ram_addr[31:24] == 8'h00 ? spi_ram_rd : 1'b0;
   sdram sdram_i (
     // cpu side
     .clk_in(clk_sdram),
     .rst (~clk_sdram_locked),
-    .din (cpu_dout),
+    .din (R_cpu_control[1] ? ram_di : cpu_dout),
     .dout(ram_dout),
-    .addr({1'b0, ram_addr[23:1]}),
-    .udsn(cpu_uds_n),
-    .ldsn(cpu_lds_n),
-    .asn (cpu_as_n),
-    .rw  (cpu_rw || !ram_cs),
+    .addr(R_cpu_control[1] ? {1'b0, spi_ram_addr[23:1]} : {1'b0, ram_addr[23:1]}),
+    .udsn(R_cpu_control[1] ? ~(we|re) : cpu_uds_n),
+    .ldsn(R_cpu_control[1] ? ~(we|re) : cpu_lds_n),
+    .asn (R_cpu_control[1] ? ~(we|re) : cpu_as_n),
+    .rw  (R_cpu_control[1] ? ~we      : cpu_rw || !ram_cs),
 
     // SDRAM side
     .sd_clk (sdram_clk),
