@@ -243,8 +243,8 @@ module mac128
     endcase
   end
 
-  //assign {ipl2_n, ipl1_n, ipl0_n} = via_irq ? 3'b110 : 3'b111;
-  assign {ipl2_n, ipl1_n, ipl0_n} = 3'b111;
+  assign {ipl2_n, ipl1_n, ipl0_n} = via_irq ? 3'b110 : 3'b111;
+  //assign {ipl2_n, ipl1_n, ipl0_n} = 3'b111;
 
   // Shift register for keyboard
   always @(posedge clk_cpu) begin
@@ -293,7 +293,7 @@ module mac128
 
   
   always @(posedge clk_cpu) begin
-    if (cpu_rw && ram_cs && ram_addr == 24'h64 && ram_dout != 16'hf007 && ram_dout != 16'hf00f && ram_dout != 16'hff00) diag16 <= ram_dout;
+    if (cpu_rw && ram_cs && ram_addr == 24'h64) diag16 <= ram_dout;
   end
 
   // VIA timer should be 0.78336 MHz - this is close enough
@@ -477,11 +477,10 @@ module mac128
   // ===============================================================
   // SPI Slave for RAM and CPU control
   // ===============================================================
-  wire [15:0] ram_do; // from SDRAM chip
   wire        spi_ram_wr, spi_ram_rd;
   wire [31:0] spi_ram_addr;
   wire  [7:0] spi_floppy_do;
-  wire  [7:0] spi_ram_di = spi_ram_addr[31:24]==8'hD1 ? spi_floppy_do : (spi_ram_addr[0] ? ram_do[7:0] : ram_do[15:8]);
+  wire  [7:0] spi_ram_di = spi_ram_addr[31:24]==8'hD1 ? spi_floppy_do : (spi_ram_addr[0] ? ram_dout[7:0] : ram_dout[15:8]);
   wire  [7:0] spi_ram_do;
   reg         floppy_req = 0;
 
