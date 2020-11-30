@@ -41,7 +41,7 @@ module mac128
   output        wifi_rxd,  // SPI from ESP32
   input         wifi_gpio16, // sclk
   input         wifi_gpio17, // cs
-  output        wifi_gpio0,
+  //output        wifi_gpio0,
 
   inout         sd_clk, sd_cmd,
   inout   [3:0] sd_d,
@@ -180,10 +180,9 @@ module mac128
   reg  dtack_n = !vpa_n;         // Data transfer ack (always ready)
   wire bg_n;                     // Bus grant
   reg  bgack_n = 1'b1;           // Bus grant ack
-  reg  vsync_irq;
-  reg  ipl0_n = 1'b1;            // Interrupt request signals
-  reg  ipl1_n = 1'b1;
-  reg  ipl2_n = 1'b1;
+  wire ipl0_n;                   // Interrupt request signals
+  wire ipl1_n;
+  wire ipl2_n;
   wire [15:0] ram_dout;
   wire [15:0] rom_dout;
   wire [15:0] cpu_din;                  // Data to CPU
@@ -192,7 +191,8 @@ module mac128
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
   wire        halt_n = ~R_cpu_control[2] && ~btn[1]; 
   
-  assign      vpa_n = !cpu_a[23] | cpu_as_n;
+  //assign      vpa_n = (!cpu_a[23] | cpu_as_n) & !(cpu_fc0 & cpu_fc1 & cpu_fc2);
+  assign      vpa_n = !(cpu_fc0 & cpu_fc1 & cpu_fc2);
   
   // VIA registers
   reg [7:0]   via_sr;                                                // Shift register
@@ -211,12 +211,11 @@ module mac128
   reg         rtc_data;
   reg         scc_wreq;
 
-  wire        via_irq = (via_ifr & via_ier) == 0;
+  wire        via_irq = (via_ifr & via_ier) != 0;
   wire        overlaid = !via_a_data_out[4];     // Set when ram and rom addresses changed
   wire [23:0] start_ram = overlaid ? 24'h0 : 24'h600000; // Start of ram
   wire [23:0] ram_addr = cpu_addr - start_ram;
 
-  wire        via_porta = !vma_n && (cpu_addr == 24'heffffe);
   reg [15:0]  ticks;
 
   // Chip select registers
@@ -242,6 +241,9 @@ module mac128
       4'b1110: via_cs = 1;
     endcase
   end
+
+  //assign {ipl2_n, ipl1_n, ipl0_n} = via_irq ? 3'b110 : 3'b111;
+  assign {ipl2_n, ipl1_n, ipl0_n} = 3'b111;
 
   // Shift register for keyboard
   always @(posedge clk_cpu) begin
@@ -288,7 +290,10 @@ module mac128
 
   wire [7:0] data_in_hi = cpu_dout[15:8];
 
-  always @(posedge clk_cpu) diag16 <= {1'b0, via_ier, 1'b0,  via_ifr};
+  
+  always @(posedge clk_cpu) begin
+    if (cpu_rw && ram_cs && cpu_din != 0) diag16 <= cpu_din;
+  end
 
   // VIA timer should be 0.78336 MHz - this is close enough
   reg [4:0] clk_div;
@@ -386,7 +391,7 @@ module mac128
   assign cpu_din = via_cs ? {via_data_out_hi, 8'hEF} :   // VIA
                    cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
                    cpu_addr == 24'h16a ? ticks :         // ticks temporary hack
-                   cpu_a[23] ? 0 : // Zero for all other peripheral addresses
+                   cpu_a[23] ? 0 :                       // Zero for all other peripheral addresses
                    ram_cs ? ram_dout : 
                    rom_dout;
 
@@ -442,7 +447,7 @@ module mac128
     .BGACKn(1'b1),
     .IPL0n(ipl0_n),
     .IPL1n(ipl1_n),
-    .IPL2n(ipl0_n), // ipl 0 and 2 tied together on the 68008
+    .IPL2n(ipl0_n), 
 
     // busses
     .iEdb(cpu_din),
@@ -559,7 +564,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign led = {ram_cs, overlaid, !vpa_n, vid_cs, !cpu_rw, reset};
+  assign led = {via_irq, ram_cs, overlaid, !vpa_n, vid_cs, !cpu_rw, reset};
 
   generate
   if(c_lcd_hex)

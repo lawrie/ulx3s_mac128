@@ -9,7 +9,7 @@ module video (
   output            vga_vs,
   output            vga_de,
   input  [15:0]     vid_dout,
-  output reg [14:1] vid_addr
+  output [14:1]     vid_addr
 );
 
   parameter HA = 640;
