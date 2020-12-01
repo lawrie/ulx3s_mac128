@@ -8,6 +8,7 @@
 `define INT_T2                  5
 `define INT_T1                  6
 
+// Mac 128k, Mac 512k or Mac Plus depending on parameters
 module mac128
 #(
   parameter c_slowdown    = 0, // CPU clock slowdown 2^n times (try 20-22)
@@ -16,7 +17,8 @@ module mac128
   parameter c_diag        = 1, // 0: No LED diagnostcs, 1: LED diagnostics
   parameter c_mhz         = 25000000, // Clock speed of CPU clock
   parameter c_screen_base = 24'h3fa700,
-  parameter c_screen_top =  c_screen_base + 24'h5580
+  parameter c_screen_top =  c_screen_base + 24'h5580,
+  parameter c_init_file = "../roms/macplus.mem"
 )
 (
   input         clk_25mhz,
@@ -161,7 +163,7 @@ module mac128
   endgenerate
 
   // ===============================================================
-  // 68000 CPU
+  // 68000 CPU registers
   // ===============================================================
   reg  fx68_phi1;                // Phi 1 enable
   reg  fx68_phi2;                // Phi 2 enable (for slow cpu)
@@ -184,7 +186,7 @@ module mac128
   wire ipl1_n;
   wire ipl2_n;
   wire [15:0] ram_dout;
-  wire [15:0] low_ram_dout;
+  //wire [15:0] low_ram_dout;
   wire [15:0] rom_dout;
   wire [15:0] cpu_din;                  // Data to CPU
   wire [15:0] cpu_dout;                 // Data from CPU
@@ -192,10 +194,13 @@ module mac128
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
   wire        halt_n = ~R_cpu_control[2] && ~btn[1]; 
   
+  // Set auto-vectoring for interrupts
   //assign      vpa_n = (!cpu_a[23] | cpu_as_n) & !(cpu_fc0 & cpu_fc1 & cpu_fc2);
   assign      vpa_n = !(cpu_fc0 & cpu_fc1 & cpu_fc2);
-  
+
+  // ===============================================================
   // VIA registers
+  // ===============================================================
   reg [7:0]   via_sr;                                                // Shift register
   reg [7:0]   via_acr;                                               // Auxilliary control register
   reg         kbd_in_strobe, kbd_out_strobe;                         // Keyboard strobes
@@ -216,13 +221,16 @@ module mac128
   wire        overlaid = !via_a_data_out[4];     // Set when ram and rom addresses changed
   wire [23:0] start_ram = overlaid ? 24'h0 : 24'h600000; // Start of ram
   wire [23:0] ram_addr = cpu_addr - start_ram;
+  reg [5:0]   vsync_cnt;
+  reg         old_vSync;
 
-  reg [15:0]  ticks;
-
+  // ===============================================================
+  // Address decoding
+  // ===============================================================
+  
   // Chip select registers
   reg         via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
-
-  // Address decoding
+  
   always @(*) begin
     via_cs = 0;
     scc_cs = 0;
@@ -234,7 +242,7 @@ module mac128
     casez(cpu_a[23:20]) 
       4'b00??: if (overlaid) ram_cs = 1;
                else rom_cs = 1;
-      4'b0100: rom_cs = 1;
+      4'b0100: if (cpu_a[17] == 0) rom_cs = 1;
       4'b0101: if (cpu_a[19:12] == 8'h80) scsi_cs = 1;
       4'b0110: if (!overlaid) ram_cs = 1;
       4'b10?1: scc_cs = 1;
@@ -243,8 +251,12 @@ module mac128
     endcase
   end
 
+  // ===============================================================
+  // VIA chip
+  // ===============================================================
+  
+  // Set interrupt
   assign {ipl2_n, ipl1_n, ipl0_n} = via_irq ? 3'b110 : 3'b111;
-  //assign {ipl2_n, ipl1_n, ipl0_n} = 3'b111;
 
   // Shift register for keyboard
   always @(posedge clk_cpu) begin
@@ -266,40 +278,36 @@ module mac128
   end
 
   // Hack until interrupts working
-  always @(posedge clk_cpu) begin
-    if (cpu_rw && cpu_addr == 24'h16a) ticks <= ticks + 1;
-  end
+  //reg [15:0]  ticks;
 
-  // Count vsyncs for a second timer
-  reg [5:0] vsync_cnt;
-  reg old_vSync;
-
-  always @(posedge clk_cpu) begin
-    old_vSync <= vSync;
-    if (vSync == 0 && old_vSync == 1) begin
-      vsync_cnt <= vsync_cnt + 1;
-      if (vsync_cnt == 59) begin
-        vsync_cnt <= 0;
-      end
-    end
-  end
+  //always @(posedge clk_cpu) begin
+  //  if (cpu_rw && cpu_addr == 24'h16a) ticks <= ticks + 1;
+  //end
 
   wire load_t2 = via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'h9;
 
+  // Audio out (not correct)
   assign audio_l = {4{via_b_data_out[7]}};
   assign audio_r = audio_l;
 
-  wire [7:0] data_in_hi = cpu_dout[15:8];
-
-  
+  // Diagnostics
+  reg [23:0] last_rom_addr;
   always @(posedge clk_cpu) begin
-    if (cpu_rw && ram_cs && ram_addr == 24'h64) diag16 <= ram_dout;
+    if (reset) begin
+      diag16 <= 0;
+    end else begin
+      diag16 <= {1'b0, via_ier, 1'b0, via_ifr};
+      if (rom_cs) last_rom_addr <= cpu_addr;
+    end
   end
 
   // VIA timer should be 0.78336 MHz - this is close enough
   reg [4:0] clk_div;
   wire timer_strobe = (clk_div == 0);
   always @(posedge clk_cpu) clk_div <= clk_div + 1; 
+
+  // VIA uses high byte
+  wire [7:0] data_in_hi = cpu_dout[15:8];
 
   // VIA register writes
   always @(posedge clk_cpu) begin
@@ -350,18 +358,22 @@ module mac128
                   end
             4'h8: via_ifr[`INT_T2] <= 0;
             4'hA: via_ifr[`INT_KEYREADY] <= 0;
-           4'hF: begin
-                   via_ifr[`INT_ONESEC] <= 0;
-                   via_ifr[`INT_VBLANK] <= 0;
-                 end
+            4'hF: begin
+                    via_ifr[`INT_ONESEC] <= 0;
+                    via_ifr[`INT_VBLANK] <= 0;
+                  end
           endcase
         end
       end
+      old_vSync <= vSync;
       if (vSync == 0 & old_vSync == 1) begin
         via_ifr[`INT_VBLANK] <= 1;
-        if (vsync_cnt == 59) via_ifr[`INT_ONESEC] <= 1;
+        vsync_cnt <= vsync_cnt + 1;
+        if (vsync_cnt == 59) begin
+          via_ifr[`INT_ONESEC] <= 1;
+          vsync_cnt <= 0;
+        end
       end
-      
     end
   end
 
@@ -388,14 +400,18 @@ module mac128
     endcase
   end
 
+  // ===============================================================
+  // CPU
+  // ===============================================================
+  
   // CPU data in multiplexing
   assign cpu_din = via_cs ? {via_data_out_hi, 8'hEF} :   // VIA
                    cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
-                   cpu_addr == 24'h16a ? ticks :         // ticks temporary hack
+                   //cpu_addr == 24'h16a ? ticks :         // ticks temporary hack
                    cpu_a[23] ? 0 :                       // Zero for all other peripheral addresses
-                   ram_cs && ram_addr < 2048 ? low_ram_dout :
+                   //ram_cs && ram_addr < 2048 ? low_ram_dout :
                    ram_cs ? ram_dout : 
-                   rom_dout;
+                   rom_cs ? rom_dout : 0;
 
   // Generate phi1 and phi2 clock enables for the CPU
   generate
@@ -449,7 +465,7 @@ module mac128
     .BGACKn(1'b1),
     .IPL0n(ipl0_n),
     .IPL1n(ipl1_n),
-    .IPL2n(ipl0_n), 
+    .IPL2n(ipl2_n), 
 
     // busses
     .iEdb(cpu_din),
@@ -461,7 +477,8 @@ module mac128
   // ROM
   // ===============================================================
   
-  rom #(.MEM_INIT_FILE("../roms/macplus.mem")) rom_i (
+  // 128k rom for Mac Plus, 64k for Mac 128k
+  rom #(.MEM_INIT_FILE(c_init_file)) rom_i (
     .clk(clk_cpu),
     .addr(cpu_a[16:1]),
     .dout(rom_dout)
@@ -511,7 +528,6 @@ module mac128
     .data_out(spi_ram_do)
   );
 
-
   // Used for interrupt to ESP32
   assign wifi_gpio0 = ~spi_irq;
 
@@ -543,15 +559,15 @@ module mac128
   // ===============================================================
 
   // Use BRAM for first 1024 words as temporary fix
-  ram ram_i (
-    .clk(clk_cpu),
-    .addr(ram_addr[10:1]),
-    .din(cpu_dout),
-    .we(ram_cs && !cpu_rw && ram_addr < 2048),
-    .dout(low_ram_dout),
-    .ub(!cpu_uds_n),
-    .lb(!cpu_lds_n)
-  );
+  //ram ram_i (
+  //  .clk(clk_cpu),
+  //  .addr(ram_addr[10:1]),
+  //  .din(cpu_dout),
+  //  .we(ram_cs && !cpu_rw && ram_addr < 2048),
+  //  .dout(low_ram_dout),
+  //  .ub(!cpu_uds_n),
+  //  .lb(!cpu_lds_n)
+  //);
 
   wire we = spi_ram_word_wr;
   wire re = spi_ram_addr[31:24] == 8'h00 ? spi_ram_rd : 1'b0;
