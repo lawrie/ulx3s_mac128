@@ -203,19 +203,21 @@ module mac128
   // ===============================================================
   reg [7:0]   via_sr;                                                // Shift register
   reg [7:0]   via_acr;                                               // Auxilliary control register
-  reg         kbd_in_strobe, kbd_out_strobe;                         // Keyboard strobes
+  wire        kbd_in_strobe;                                         // Keyboard input strobe
+  reg         kbd_out_strobe;                                        // Keyboard output strobe
   reg [7:0]   via_a_data_out, via_b_data_out;                        // Port A and B data
   reg         via_b0_ddr;
   reg [6:0]   via_ifr;                                               // Interupt flag register
   reg [6:0]   via_ier;                                               // Interupt enable register
   reg [15:0]  via_timer1_count, via_timer1_latch, via_timer2_count;  // Timer registers
-  reg [7:0]   kbd_in_data, kbd_out_data;                             // Keyboard data
+  wire [7:0]  kbd_in_data;                                           // Keyboard input data
+  reg [7:0]   kbd_out_data = 0;                                      // Keyboard output data
   reg [7:0]   via_data_out_hi;
   reg [7:0]   via_timer2_latch_low;
   reg         via_timer2_armed;
-  reg         mouse_y2, mouse_x2, mouse_button;
-  reg         rtc_data;
-  reg         scc_wreq;
+  reg         mouse_x1, mouse_y1, mouse_x2, mouse_y2, mouse_button;
+  reg         rtc_data = 0;
+  reg         scc_wreq = 0;
 
   wire        via_irq = (via_ifr & via_ier) != 0;
   wire        overlaid = !via_a_data_out[4];     // Set when ram and rom addresses changed
@@ -496,7 +498,7 @@ module mac128
   // ===============================================================
   wire        spi_ram_wr, spi_ram_rd;
   wire [31:0] spi_ram_addr;
-  wire  [7:0] spi_floppy_do;
+  wire  [7:0] spi_floppy_do = 0;
   wire  [7:0] spi_ram_di = spi_ram_addr[31:24]==8'hD1 ? spi_floppy_do : (spi_ram_addr[0] ? ram_dout[7:0] : ram_dout[15:8]);
   wire  [7:0] spi_ram_do;
   reg         floppy_req = 0;
@@ -602,14 +604,44 @@ module mac128
   wire [10:0] ps2_key;
 
   // Get PS/2 keyboard events
-  ps2 ps2_kbd
-  (
+  ps2 ps2_i (
     .clk(clk_cpu),
     .ps2_clk(ps2Clk),
     .ps2_data(ps2Data),
     .ps2_key(ps2_key)
   );
 
+  wire capslock;
+
+  ps2_kbd ps2_kbd_i (
+    .clk(clk_cpu),
+    .reset(reset),
+    .ce(1),
+    .ps2_key(ps2_key),
+    .capslock(capslock),
+    .data_out(kbd_out_data),
+    .strobe_out(kbd_out_strobe),
+    .data_in(kbd_in_data),
+    .strobe_in(kbd_in_strobe)
+  );
+
+  // ===============================================================
+  // Mouse (not yet implemented)
+  // ===============================================================
+  wire [24:0] ps2_mouse = 0;
+
+  ps2_mouse ps2_mouse_i (
+    .clk(clk_cpu),
+    .reset(reset),
+    .ce(1),
+    .ps2_mouse(ps2_mouse),
+    .x1(mouse_x1),
+    .x2(mouse_x2),
+    .y1(mouse_y1),
+    .y2(mouse_y2),
+    .button(mouse_button)
+  );
+  
   // ===============================================================
   // Video
   // ===============================================================
