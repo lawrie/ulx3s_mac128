@@ -225,6 +225,8 @@ module mac128
   wire [23:0] ram_addr = cpu_addr - start_ram;
   reg [5:0]   vsync_cnt;
   reg         old_vSync;
+  wire [10:0] ps2_key;
+  wire        capslock;
 
   // ===============================================================
   // Address decoding
@@ -298,7 +300,8 @@ module mac128
     if (reset) begin
       diag16 <= 0;
     end else begin
-      diag16 <= {1'b0, via_ier, 1'b0, via_ifr};
+      //diag16 <= {1'b0, via_ier, 1'b0, via_ifr};
+      diag16 <= {kbd_in_strobe, capslock, kbd_in_data};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -601,7 +604,6 @@ module mac128
   // ===============================================================
   // Keyboard (not yet implemented)
   // ===============================================================
-  wire [10:0] ps2_key;
 
   // Get PS/2 keyboard events
   ps2 ps2_i (
@@ -610,8 +612,6 @@ module mac128
     .ps2_data(ps2Data),
     .ps2_key(ps2_key)
   );
-
-  wire capslock;
 
   ps2_kbd ps2_kbd_i (
     .clk(clk_cpu),

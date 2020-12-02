@@ -99,12 +99,10 @@ wire extended = ps2_key[8];
 wire ignore_capslock = {extended,ps2_key[7:0]} == 9'h058 && capslock;
 
 /* Handle key_pending, and multi-byte keypad responses */
-reg old_stb;
 always @(posedge clk) begin
 
 	if (reset) begin
 		key_pending <= 0;
-		old_stb <= ps2_key[10];
 		capslock <= 0;
 	end
 	else if(ce) begin
@@ -114,8 +112,7 @@ always @(posedge clk) begin
 			else key_pending <= 0;
 		end else begin
 	
-			old_stb <= ps2_key[10];
-			if(old_stb != ps2_key[10]) begin
+			if(ps2_key[10]) begin
 
 			        /* Capslock handling */
 				if(ps2_key[7:0] == 8'h58 && !extended && !depress) capslock <= ~capslock;
