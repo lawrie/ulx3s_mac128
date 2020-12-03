@@ -757,18 +757,45 @@ module mac128
     .vid_dout(vid_b_dout)
   );
 
+
+  // ===============================================================
+  // SPI Slave for OSD display
+  // ===============================================================
+  wire [7:0] osd_vga_r, osd_vga_g, osd_vga_b;
+  wire osd_vga_hsync, osd_vga_vsync, osd_vga_blank;
+  spi_osd
+  #(
+    .c_start_x(62), .c_start_y(80),
+    .c_chars_x(64), .c_chars_y(20),
+    .c_init_on(0),
+    .c_transparency(1),
+    .c_char_file("osd.mem"),
+    .c_font_file("font_bizcat8x16.mem")
+  )
+  spi_osd_inst
+  (
+    .clk_pixel(clk_vga), .clk_pixel_ena(1),
+    .i_r(red  ),
+    .i_g(green),
+    .i_b(blue ),
+    .i_hsync(~hSync), .i_vsync(~vSync), .i_blank(~vga_de),
+    .i_csn(~wifi_gpio17), .i_sclk(wifi_gpio16), .i_mosi(sd_d[1]), // .o_miso(),
+    .o_r(osd_vga_r), .o_g(osd_vga_g), .o_b(osd_vga_b),
+    .o_hsync(osd_vga_hsync), .o_vsync(osd_vga_vsync), .o_blank(osd_vga_blank)
+  );
+
   // ===============================================================
   // Convert VGA to HDMI
   // ===============================================================
   HDMI_out vga2dvid (
     .pixclk(clk_vga),
     .pixclk_x5(clk_hdmi),
-    .red  (red),
-    .green(green),
-    .blue (blue),
-    .vde  (vga_de),
-    .hSync(hSync),
-    .vSync(vSync),
+    .red  (osd_vga_r),
+    .green(osd_vga_g),
+    .blue (osd_vga_b),
+    .vde  (~osd_vga_blank),
+    .hSync(~osd_vga_hsync),
+    .vSync(~osd_vga_vsync),
     .gpdi_dp(gpdi_dp),
     .gpdi_dn()
   );
@@ -785,7 +812,7 @@ module mac128
   reg [127:0] R_display;
   // HEX decoder does printf("%16X\n%16X\n", R_display[63:0], R_display[127:64]);
   always @(posedge clk_cpu)
-    R_display <= { 32'b0, ram_dout, rom_dout, // 2nd HEX row
+    R_display <= { 8'b0, ram_dout, rom_dout, last_rom_addr, // 2nd HEX row
                    8'b0, cpu_dout, cpu_din, cpu_addr}; // 1st HEX row
 
   parameter C_color_bits = 16;
