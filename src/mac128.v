@@ -263,6 +263,17 @@ module mac128
                       rindex == 3 && rs[0] ? rr3_a : 0;
 
   // ===============================================================
+  // IWM registers
+  // ===============================================================
+  wire        disk_sel = via_a_data_out[5];
+  wire [15:0] iwm_dout;
+  reg [1:0]   insert_disk;
+  wire [1:0]  disk_in_drive;
+  wire [21:0] extra_rom_read_addr;
+  reg         extra_rom_read_ack;
+  wire [7:0]  extra_rom_read_data; 
+
+  // ===============================================================
   // Address decoding
   // ===============================================================
   always @(*) begin
@@ -483,6 +494,26 @@ module mac128
       if (do_latch_b) dcd_latch_b <= mouse_y2;
     end
   end
+
+  // ===============================================================
+  // IWM
+  // ===============================================================
+  iwm iwm_i (
+    .clk8(clk_cpu),
+    ._reset(~reset),
+    .selectIWM(iwm_cs),
+    ._cpuRW(~cpu_rw),
+    ._cpuLDS(cpu_lds_n),
+    .dataIn(cpu_dout),
+    .cpuAddrRegHi(cpu_a[12:9]),
+    .SEL(disk_sel),
+    .dataOut(iwm_dout),
+    .insertDisk(insert_disk),
+    .diskInDrive(disk_in_drive),
+    .extraRomReadAddr(extra_rom_read_addr),
+    .extraRomReadAck(extra_rom_read_ack),
+    .extraRomReadData(extra_rom_read_data)
+  );
 
   // ===============================================================
   // CPU
