@@ -194,6 +194,8 @@ module mac128
   wire [23:1] cpu_a;                    // 16-bit word address
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
   wire        halt_n = ~R_cpu_control[2] && ~btn[1]; 
+  // Chip select registers
+  reg         via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
   
   // Set auto-vectoring for interrupts
   //assign      vpa_n = (!cpu_a[23] | cpu_as_n) & !(cpu_fc0 & cpu_fc1 & cpu_fc2);
@@ -230,12 +232,34 @@ module mac128
   wire        capslock;
 
   // ===============================================================
+  // SCC registers
+  // ===============================================================
+  reg         dcd_latch_a, dcd_latch_b;
+  reg [3:0]   rindex, rindex_latch;
+  reg         wreg_a, wreg_b;
+  wire        rs = cpu_a[2:1];
+  wire [7:0]  wdata = cpu_dout[15:8];
+  wire        wreg_a = scc_cs && !cpu_rw & ~rs[1] & rs[0];
+  wire        wreg_b = scc_cs && !cpu_rw & ~rs[1] & ~rs[0];
+  wire        do_extreset_a = wreg_a & (rindex == 0) & (wdata[5:3] == 3'b010);
+  wire        do_extreset_b = wreg_b & (rindex == 0) & (wdata[5:3] == 3'b010);
+  reg         latch_open_a, latch_open_b;
+  reg [7:0]   wr15_a, wr15_b; 
+  wire        dcd_ip_a = (mouse_x1 != dcd_latch_a) & wr15_a[3];
+  wire        dcd_ip_b = (mouse_y1 != dcd_latch_b) & wr15_b[3];
+  wire        do_latch_a = latch_open_a & dcd_ip_a;
+  wire        do_latch_b = latch_open_b & dcd_ip_b;
+  reg [7:0]   wr1_a, wr1_b;
+  wire        reset_scc = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b11)) | reset;
+  wire        reset_a   = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b10)) | reset_scc;
+  wire        reset_b   = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b01)) | reset_scc;
+  reg [5:0]   wr9;
+  reg         ex_irq_ip_a, ex_irq_ip_b;
+  reg         scc_irq = ex_irq_ip_a | ex_irq_ip_b;
+
+  // ===============================================================
   // Address decoding
   // ===============================================================
-  
-  // Chip select registers
-  reg         via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
-  
   always @(*) begin
     via_cs = 0;
     scc_cs = 0;
@@ -261,7 +285,7 @@ module mac128
   // ===============================================================
   
   // Set interrupt
-  assign {ipl2_n, ipl1_n, ipl0_n} = via_irq ? 3'b110 : 3'b111;
+  assign {ipl2_n, ipl1_n, ipl0_n} = via_irq ? 3'b110 : scc_irq ? 3'b101 : 3'b111;
 
   // Shift register for keyboard
   always @(posedge clk_cpu) begin
@@ -299,11 +323,13 @@ module mac128
   reg [23:0] last_rom_addr;
   always @(posedge clk_cpu) begin
     if (reset) begin
-      diag16 <= 0;
+      //diag16 <= 0;
     end else begin
       //diag16 <= {1'b0, via_ier, 1'b0, via_ifr};
       //diag16 <= {kbd_in_strobe, capslock, kbd_in_data};
-      diag16 <= debug;
+      //diag16 <= debug;
+      //diag16 <= {wr1_a, wr1_b};
+      //diag16 <= {rindex, rindex_latch};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -405,6 +431,55 @@ module mac128
       4'hE: via_data_out_hi = {1'b0, via_ier};
       4'hF: via_data_out_hi = {scc_wreq, via_a_data_out[6:0]};
     endcase
+  end
+
+  // ===============================================================
+  // SCC
+  // ===============================================================
+  always @(posedge clk_cpu) begin
+    if (reset) begin
+      rindex_latch <= 0;
+      latch_open_a <= 1;
+      latch_open_b <= 1;
+      wr15_a <= 8'b11111000;
+      wr15_b <= 8'b11111000;
+      ex_irq_ip_a <= 0;
+      ex_irq_ip_b <= 0;
+      wr9 <= 0;
+      wr1_a <= 0;
+      wr1_b <= 0;
+    end else begin
+      if (rindex == 9) diag16[8] <= 1;
+      if (rindex == 1) diag16[9] <= 1;
+      rindex <= rindex_latch;
+      rindex_latch <= 0;
+      if (scc_cs && !cpu_rw && rindex == 0) begin
+        rindex_latch[2:0] <= wdata[2:0];
+        rindex_latch[3] <= wdata[5:3] == 3'b001;
+        diag16[7:0] <= wdata;
+      end
+      if (do_extreset_a) begin
+        latch_open_a <= 1;
+        ex_irq_ip_a <= 0;
+      end else if (do_latch_a) begin
+        latch_open_a <= 0;
+        if (wr1_a[0]) ex_irq_ip_a <= 1;
+      end
+      if (do_extreset_b) begin
+        latch_open_b <= 1;
+        ex_irq_ip_b <= 0;
+      end else if (do_latch_b) begin
+        latch_open_b <= 0;
+        if (wr1_b[0]) ex_irq_ip_b <= 1;
+      end
+      if (wreg_a) wr15_a <= wdata;
+      if (wreg_b) wr15_b <= wdata;
+      if ((wr1_a || wr1_b) && (rindex == 9)) wr9 <= wdata[5:0];
+      if (reset_a) wr1_a <= {2'b00, wr1_a[5], 2'b00, wr1_a[2], 2'b00};
+      else if (wreg_a && rindex == 1) wr1_a <= wdata;
+      if (reset_b) wr1_b <= {2'b00, wr1_b[5], 2'b00, wr1_b[2], 2'b00};
+      else if (wreg_b && rindex == 1) wr1_b <= wdata;
+    end
   end
 
   // ===============================================================
@@ -699,7 +774,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign led = {via_irq, ram_cs, overlaid, !vpa_n, vid_cs, !cpu_rw, reset};
+  assign led = {scc_irq, via_irq, ram_cs, overlaid, !vpa_n, scc_cs, !cpu_rw, reset};
 
   generate
   if(c_lcd_hex)
