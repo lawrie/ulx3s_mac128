@@ -148,7 +148,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds using 2 Digilent 8 Led Pmods
   // ===============================================================
-  reg [15:0] diag16 = 0;
+  reg [15:0] diag16;
   reg [15:0] debug;
 
   generate
@@ -236,11 +236,10 @@ module mac128
   // ===============================================================
   reg         dcd_latch_a, dcd_latch_b;
   reg [3:0]   rindex, rindex_latch;
-  reg         wreg_a, wreg_b;
-  wire        rs = cpu_a[2:1];
+  wire [1:0]  rs = cpu_a[2:1];
   wire [7:0]  wdata = cpu_dout[15:8];
-  wire        wreg_a = scc_cs && !cpu_rw & ~rs[1] & rs[0];
-  wire        wreg_b = scc_cs && !cpu_rw & ~rs[1] & ~rs[0];
+  wire        wreg_a = scc_cs && !cpu_rw & (~rs[1]) & rs[0];
+  wire        wreg_b = scc_cs && !cpu_rw & (~rs[1]) & ~rs[0];
   wire        do_extreset_a = wreg_a & (rindex == 0) & (wdata[5:3] == 3'b010);
   wire        do_extreset_b = wreg_b & (rindex == 0) & (wdata[5:3] == 3'b010);
   reg         latch_open_a, latch_open_b;
@@ -258,8 +257,10 @@ module mac128
   reg         scc_irq = ex_irq_ip_a | ex_irq_ip_b;
   wire [7:0]  rr0_a = {8'b0100, wr15_a[3] ? dcd_latch_a : mouse_x1, 3'b100};
   wire [7:0]  rr0_b = {8'b0100, wr15_b[3] ? dcd_latch_b : mouse_y1, 3'b100};
+  wire [7:0]  rr3_a = {4'b0, ex_irq_ip_a, 2'b0, ex_irq_ip_b};
   wire [7:0]  rdata = rindex == 0 && rs[0] ? rr0_a :
-                      rindex == 0          ? rr0_b : 0;
+                      rindex == 0          ? rr0_b : 
+                      rindex == 3 && rs[0] ? rr3_a : 0;
 
   // ===============================================================
   // Address decoding
@@ -310,13 +311,6 @@ module mac128
     end
   end
 
-  // Hack until interrupts working
-  //reg [15:0]  ticks;
-
-  //always @(posedge clk_cpu) begin
-  //  if (cpu_rw && cpu_addr == 24'h16a) ticks <= ticks + 1;
-  //end
-
   wire load_t2 = via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'h9;
 
   // Audio out (not correct)
@@ -327,13 +321,7 @@ module mac128
   reg [23:0] last_rom_addr;
   always @(posedge clk_cpu) begin
     if (reset) begin
-      //diag16 <= 0;
     end else begin
-      //diag16 <= {1'b0, via_ier, 1'b0, via_ifr};
-      //diag16 <= {kbd_in_strobe, capslock, kbd_in_data};
-      //diag16 <= debug;
-      //diag16 <= {wr1_a, wr1_b};
-      //diag16 <= {rindex, rindex_latch};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -452,17 +440,23 @@ module mac128
       wr9 <= 0;
       wr1_a <= 0;
       wr1_b <= 0;
+      dcd_latch_a <= 0;
+      dcd_latch_b <= 0;
+      diag16 <= 0;
     end else begin
-      if (scc_cs && cpu_rw) diag16 <= {1'b1, rdata};
-      //if (reset_scc) diag16[8] <= 1;
-      //if (reset_a) diag16[9] <= 1;
-      //if (reset_b) diag16[10] <= 1;
+      if (scc_cs && cpu_rw) diag16[7:0] <= rdata;
+      if (scc_irq) diag16[8] <= 1;
+      if (dcd_ip_a) diag16[9] <= 1;
+      if (dcd_ip_b) diag16[10] <= 1;
+      diag16[11] <= wr15_a[3];
+      diag16[12] <= wr15_b[3];
+      diag16[13] <= dcd_latch_a;
+      diag16[14] <= dcd_latch_b;
       rindex <= rindex_latch;
       rindex_latch <= 0;
       if (scc_cs && !cpu_rw && rindex == 0) begin
         rindex_latch[2:0] <= wdata[2:0];
         rindex_latch[3] <= wdata[5:3] == 3'b001;
-        //diag16[7:0] <= wdata;
       end
       if (do_extreset_a) begin
         latch_open_a <= 1;
@@ -485,6 +479,8 @@ module mac128
       else if (wreg_a && rindex == 1) wr1_a <= wdata;
       if (reset_b) wr1_b <= {2'b00, wr1_b[5], 2'b00, wr1_b[2], 2'b00};
       else if (wreg_b && rindex == 1) wr1_b <= wdata;
+      if (do_latch_a) dcd_latch_a <= mouse_x2;
+      if (do_latch_b) dcd_latch_b <= mouse_y2;
     end
   end
 
@@ -494,9 +490,8 @@ module mac128
   
   // CPU data in multiplexing
   assign cpu_din = via_cs ? {via_data_out_hi, 8'hEF} :   // VIA
-                   scc_cs ? {rdata, rdata} :           // SCC for mouse
+                   scc_cs ? {rdata, 8'h00} :             // SCC for mouse
                    cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
-                   //cpu_addr == 24'h16a ? ticks :         // ticks temporary hack
                    cpu_a[23] ? 0 :                       // Zero for all other peripheral addresses
                    //ram_cs && ram_addr < 2048 ? low_ram_dout :
                    ram_cs ? ram_dout : 
@@ -781,7 +776,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign led = {scc_irq, via_irq, ram_cs, overlaid, !vpa_n, scc_cs, !cpu_rw, reset};
+  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, mouse_x2, mouse_y1, mouse_x1, reset};
 
   generate
   if(c_lcd_hex)
