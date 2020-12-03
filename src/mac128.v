@@ -256,6 +256,10 @@ module mac128
   reg [5:0]   wr9;
   reg         ex_irq_ip_a, ex_irq_ip_b;
   reg         scc_irq = ex_irq_ip_a | ex_irq_ip_b;
+  wire [7:0]  rr0_a = {8'b0100, wr15_a[3] ? dcd_latch_a : mouse_x1, 3'b100};
+  wire [7:0]  rr0_b = {8'b0100, wr15_b[3] ? dcd_latch_b : mouse_y1, 3'b100};
+  wire [7:0]  rdata = rindex == 0 && rs[0] ? rr0_a :
+                      rindex == 0          ? rr0_b : 0;
 
   // ===============================================================
   // Address decoding
@@ -449,14 +453,16 @@ module mac128
       wr1_a <= 0;
       wr1_b <= 0;
     end else begin
-      if (rindex == 9) diag16[8] <= 1;
-      if (rindex == 1) diag16[9] <= 1;
+      if (scc_cs && cpu_rw) diag16 <= {1'b1, rdata};
+      //if (reset_scc) diag16[8] <= 1;
+      //if (reset_a) diag16[9] <= 1;
+      //if (reset_b) diag16[10] <= 1;
       rindex <= rindex_latch;
       rindex_latch <= 0;
       if (scc_cs && !cpu_rw && rindex == 0) begin
         rindex_latch[2:0] <= wdata[2:0];
         rindex_latch[3] <= wdata[5:3] == 3'b001;
-        diag16[7:0] <= wdata;
+        //diag16[7:0] <= wdata;
       end
       if (do_extreset_a) begin
         latch_open_a <= 1;
@@ -488,6 +494,7 @@ module mac128
   
   // CPU data in multiplexing
   assign cpu_din = via_cs ? {via_data_out_hi, 8'hEF} :   // VIA
+                   scc_cs ? {rdata, rdata} :           // SCC for mouse
                    cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
                    //cpu_addr == 24'h16a ? ticks :         // ticks temporary hack
                    cpu_a[23] ? 0 :                       // Zero for all other peripheral addresses
