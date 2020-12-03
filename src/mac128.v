@@ -149,6 +149,7 @@ module mac128
   // Diagnostic leds using 2 Digilent 8 Led Pmods
   // ===============================================================
   reg [15:0] diag16 = 0;
+  reg [15:0] debug;
 
   generate
     genvar i;
@@ -301,7 +302,8 @@ module mac128
       diag16 <= 0;
     end else begin
       //diag16 <= {1'b0, via_ier, 1'b0, via_ifr};
-      diag16 <= {kbd_in_strobe, capslock, kbd_in_data};
+      //diag16 <= {kbd_in_strobe, capslock, kbd_in_data};
+      diag16 <= debug;
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -602,11 +604,11 @@ module mac128
   );
 
   // ===============================================================
-  // Keyboard (not yet implemented)
+  // Keyboard
   // ===============================================================
 
   // Get PS/2 keyboard events
-  ps2 ps2_i (
+  ps2key ps2key_i (
     .clk(clk_cpu),
     .ps2_clk(ps2Clk),
     .ps2_data(ps2Data),
@@ -626,20 +628,19 @@ module mac128
   );
 
   // ===============================================================
-  // Mouse (not yet implemented)
+  // Mouse
   // ===============================================================
-  wire [24:0] ps2_mouse = 0;
-
   ps2_mouse ps2_mouse_i (
-    .clk(clk_cpu),
+    .sysclk(clk_cpu),
     .reset(reset),
-    .ce(1),
-    .ps2_mouse(ps2_mouse),
     .x1(mouse_x1),
     .x2(mouse_x2),
     .y1(mouse_y1),
     .y2(mouse_y2),
-    .button(mouse_button)
+    .button(mouse_button),
+    .ps2dat(ps2Data),
+    .ps2clk(ps2Clk),
+    .debug(debug)
   );
   
   // ===============================================================
