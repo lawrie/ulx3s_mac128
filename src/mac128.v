@@ -193,6 +193,7 @@ module mac128
   wire [15:0] cpu_dout;                 // Data from CPU
   wire [23:1] cpu_a;                    // 16-bit word address
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
+  reg [23:0]  last_rom_addr;
   wire        halt_n = ~R_cpu_control[2] && ~btn[1]; 
   // Chip select registers
   reg         via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
@@ -206,28 +207,28 @@ module mac128
   // ===============================================================
   reg [7:0]   via_sr;                                                // Shift register
   reg [7:0]   via_acr;                                               // Auxilliary control register
-  wire        kbd_in_strobe;                                         // Keyboard input strobe
   reg         kbd_out_strobe;                                        // Keyboard output strobe
   reg [7:0]   via_a_data_out, via_b_data_out;                        // Port A and B data
   reg         via_b0_ddr;
   reg [6:0]   via_ifr;                                               // Interupt flag register
   reg [6:0]   via_ier;                                               // Interupt enable register
   reg [15:0]  via_timer1_count, via_timer1_latch, via_timer2_count;  // Timer registers
-  wire [7:0]  kbd_in_data;                                           // Keyboard input data
   reg [7:0]   kbd_out_data = 0;                                      // Keyboard output data
   reg [7:0]   via_data_out_hi;
   reg [7:0]   via_timer2_latch_low;
   reg         via_timer2_armed;
-  reg         mouse_x1, mouse_y1, mouse_x2, mouse_y2, mouse_button;
   reg         rtc_data = 0;
   reg         scc_wreq = 0;
+  reg [5:0]   vsync_cnt;
+  reg         old_vSync;
 
+  wire [7:0]  kbd_in_data;                                           // Keyboard input data
+  wire        kbd_in_strobe;                                         // Keyboard input strobe
   wire        via_irq = (via_ifr & via_ier) != 0;
   wire        overlaid = !via_a_data_out[4];     // Set when ram and rom addresses changed
   wire [23:0] start_ram = overlaid ? 24'h0 : 24'h600000; // Start of ram
   wire [23:0] ram_addr = cpu_addr - start_ram;
-  reg [5:0]   vsync_cnt;
-  reg         old_vSync;
+  wire        mouse_x1, mouse_y1, mouse_x2, mouse_y2, mouse_button;
   wire [10:0] ps2_key;
   wire        capslock;
 
@@ -236,30 +237,35 @@ module mac128
   // ===============================================================
   reg         dcd_latch_a, dcd_latch_b;
   reg [3:0]   rindex, rindex_latch;
-  wire [1:0]  rs = cpu_a[2:1];
-  wire [7:0]  wdata = cpu_dout[15:8];
-  wire        wreg_a = scc_cs && !cpu_rw & (~rs[1]) & rs[0];
-  wire        wreg_b = scc_cs && !cpu_rw & (~rs[1]) & ~rs[0];
-  wire        do_extreset_a = wreg_a & (rindex == 0) & (wdata[5:3] == 3'b010);
-  wire        do_extreset_b = wreg_b & (rindex == 0) & (wdata[5:3] == 3'b010);
   reg         latch_open_a, latch_open_b;
   reg [7:0]   wr15_a, wr15_b; 
+  reg [7:0]   wr1_a, wr1_b;
+  reg [5:0]   wr9;
+  reg         ex_irq_ip_a, ex_irq_ip_b;
+
+  wire        scc_irq = ex_irq_ip_a | ex_irq_ip_b;
+  wire [1:0]  rs = cpu_a[2:1];
+  wire [7:0]  wdata = cpu_dout[15:8];
+  wire        wreg_a = scc_cs & (~cpu_rw) & (~rs[1]) & rs[0];
+  wire        wreg_b = scc_cs & (~cpu_rw) & (~rs[1]) & ~rs[0];
+  wire        do_extreset_a = wreg_a & (rindex == 0) & (wdata[5:3] == 3'b010);
+  wire        do_extreset_b = wreg_b & (rindex == 0) & (wdata[5:3] == 3'b010);
   wire        dcd_ip_a = (mouse_x1 != dcd_latch_a) & wr15_a[3];
   wire        dcd_ip_b = (mouse_y1 != dcd_latch_b) & wr15_b[3];
   wire        do_latch_a = latch_open_a & dcd_ip_a;
   wire        do_latch_b = latch_open_b & dcd_ip_b;
-  reg [7:0]   wr1_a, wr1_b;
   wire        reset_scc = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b11)) | reset;
   wire        reset_a   = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b10)) | reset_scc;
   wire        reset_b   = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b01)) | reset_scc;
-  reg [5:0]   wr9;
-  reg         ex_irq_ip_a, ex_irq_ip_b;
-  reg         scc_irq = ex_irq_ip_a | ex_irq_ip_b;
   wire [7:0]  rr0_a = {8'b0100, wr15_a[3] ? dcd_latch_a : mouse_x1, 3'b100};
   wire [7:0]  rr0_b = {8'b0100, wr15_b[3] ? dcd_latch_b : mouse_y1, 3'b100};
   wire [7:0]  rr3_a = {4'b0, ex_irq_ip_a, 2'b0, ex_irq_ip_b};
+  wire [2:0]  rr_vec_stat = ex_irq_ip_a ? 3'b101 : ex_irq_ip_b ? 3'b001 : 3'b011;
+  wire [7:0]  rr2_b = {4'b0, rr_vec_stat, 1'b0};
   wire [7:0]  rdata = rindex == 0 && rs[0] ? rr0_a :
                       rindex == 0          ? rr0_b : 
+                      rindex == 2 && rs[0] ? 0     :
+                      rindex == 2          ? rr2_b :
                       rindex == 3 && rs[0] ? rr3_a : 0;
 
   // ===============================================================
@@ -329,11 +335,12 @@ module mac128
   assign audio_r = audio_l;
 
   // Diagnostics
-  reg [23:0] last_rom_addr;
   always @(posedge clk_cpu) begin
     if (reset) begin
+      diag16 <= 0;
     end else begin
       if (rom_cs) last_rom_addr <= cpu_addr;
+      if (last_rom_addr == 24'h401ab2) diag16 <= diag16 + 1;
     end
   end
 
@@ -441,33 +448,37 @@ module mac128
   // ===============================================================
   always @(posedge clk_cpu) begin
     if (reset) begin
-      rindex_latch <= 0;
-      latch_open_a <= 1;
-      latch_open_b <= 1;
-      wr15_a <= 8'b11111000;
-      wr15_b <= 8'b11111000;
-      ex_irq_ip_a <= 0;
-      ex_irq_ip_b <= 0;
       wr9 <= 0;
       wr1_a <= 0;
       wr1_b <= 0;
+    end else begin
+      if ((wreg_a || wreg_b) && (rindex == 9)) wr9 <= wdata[5:0];
+      if (reset_a) wr1_a <= {2'b00, wr1_a[5], 2'b00, wr1_a[2], 2'b00};
+      else if (wreg_a && rindex == 1) wr1_a <= wdata;
+      if (reset_b) wr1_b <= {2'b00, wr1_b[5], 2'b00, wr1_b[2], 2'b00};
+      else if (wreg_b && rindex == 1) wr1_b <= wdata;
+    end
+  end
+
+  always @(posedge clk_cpu) begin
+    if (reset_scc) begin
+      rindex_latch <= 0;
+      ex_irq_ip_a <= 0;
+      ex_irq_ip_b <= 0;
+      latch_open_a <= 1;
+      latch_open_b <= 1;
       dcd_latch_a <= 0;
       dcd_latch_b <= 0;
-      diag16 <= 0;
+      wr15_a <= 8'b11111000;
+      wr15_b <= 8'b11111000;
     end else begin
-      if (scc_cs && cpu_rw) diag16[7:0] <= rdata;
-      if (scc_irq) diag16[8] <= 1;
-      if (dcd_ip_a) diag16[9] <= 1;
-      if (dcd_ip_b) diag16[10] <= 1;
-      diag16[11] <= wr15_a[3];
-      diag16[12] <= wr15_b[3];
-      diag16[13] <= dcd_latch_a;
-      diag16[14] <= dcd_latch_b;
       rindex <= rindex_latch;
-      rindex_latch <= 0;
-      if (scc_cs && !cpu_rw && rindex == 0) begin
-        rindex_latch[2:0] <= wdata[2:0];
-        rindex_latch[3] <= wdata[5:3] == 3'b001;
+      if (scc_cs && !rs[1]) begin
+        rindex_latch <= 0;
+        if (!cpu_rw && rindex == 0) begin
+          rindex_latch[2:0] <= wdata[2:0];
+          rindex_latch[3] <= wdata[5:3] == 3'b001;
+        end
       end
       if (do_extreset_a) begin
         latch_open_a <= 1;
@@ -483,15 +494,12 @@ module mac128
         latch_open_b <= 0;
         if (wr1_b[0]) ex_irq_ip_b <= 1;
       end
-      if (wreg_a) wr15_a <= wdata;
-      if (wreg_b) wr15_b <= wdata;
-      if ((wr1_a || wr1_b) && (rindex == 9)) wr9 <= wdata[5:0];
-      if (reset_a) wr1_a <= {2'b00, wr1_a[5], 2'b00, wr1_a[2], 2'b00};
-      else if (wreg_a && rindex == 1) wr1_a <= wdata;
-      if (reset_b) wr1_b <= {2'b00, wr1_b[5], 2'b00, wr1_b[2], 2'b00};
-      else if (wreg_b && rindex == 1) wr1_b <= wdata;
-      if (do_latch_a) dcd_latch_a <= mouse_x2;
-      if (do_latch_b) dcd_latch_b <= mouse_y2;
+      if (rindex == 15) begin
+        if (wreg_a) wr15_a <= wdata;
+        if (wreg_b) wr15_b <= wdata;
+      end
+      if (do_latch_a) dcd_latch_a <= mouse_x1;
+      if (do_latch_b) dcd_latch_b <= mouse_y1;
     end
   end
 
@@ -521,7 +529,7 @@ module mac128
   
   // CPU data in multiplexing
   assign cpu_din = via_cs ? {via_data_out_hi, 8'hEF} :   // VIA
-                   scc_cs ? {rdata, 8'h00} :             // SCC for mouse
+                   scc_cs ? {rdata, 8'hEF} :             // SCC for mouse
                    cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
                    cpu_a[23] ? 0 :                       // Zero for all other peripheral addresses
                    //ram_cs && ram_addr < 2048 ? low_ram_dout :
