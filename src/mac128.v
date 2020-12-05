@@ -243,7 +243,7 @@ module mac128
   reg [5:0]   wr9;
   reg         ex_irq_ip_a, ex_irq_ip_b;
 
-  wire        scc_irq = ex_irq_ip_a | ex_irq_ip_b;
+  wire        scc_irq = wr9[3] & (ex_irq_ip_a | ex_irq_ip_b);
   wire [1:0]  rs = cpu_a[2:1];
   wire [7:0]  wdata = cpu_dout[15:8];
   wire        wreg_a = scc_cs & (~cpu_rw) & (~rs[1]) & rs[0];
@@ -257,8 +257,8 @@ module mac128
   wire        reset_scc = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b11)) | reset;
   wire        reset_a   = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b10)) | reset_scc;
   wire        reset_b   = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b01)) | reset_scc;
-  wire [7:0]  rr0_a = {8'b0100, wr15_a[3] ? dcd_latch_a : mouse_x1, 3'b100};
-  wire [7:0]  rr0_b = {8'b0100, wr15_b[3] ? dcd_latch_b : mouse_y1, 3'b100};
+  wire [7:0]  rr0_a = {4'b0100, wr15_a[3] ? dcd_latch_a : mouse_x1, 3'b100};
+  wire [7:0]  rr0_b = {4'b0100, wr15_b[3] ? dcd_latch_b : mouse_y1, 3'b100};
   wire [7:0]  rr3_a = {4'b0, ex_irq_ip_a, 2'b0, ex_irq_ip_b};
   wire [2:0]  rr_vec_stat = ex_irq_ip_a ? 3'b101 : ex_irq_ip_b ? 3'b001 : 3'b011;
   wire [7:0]  rr2_b = {4'b0, rr_vec_stat, 1'b0};
@@ -340,7 +340,8 @@ module mac128
       diag16 <= 0;
     end else begin
       if (rom_cs) last_rom_addr <= cpu_addr;
-      if (last_rom_addr == 24'h401ab2) diag16 <= diag16 + 1;
+      if (last_rom_addr == 24'h401AE0) diag16 <= diag16 + 1;
+      //if (scc_irq && last_rom_addr == 24'h401aae && ram_cs && cpu_addr != 24'h1ba && ram_dout != 16'h0040 && diag16 == 0) diag16 <= ram_dout;
     end
   end
 
@@ -446,12 +447,15 @@ module mac128
   // ===============================================================
   // SCC
   // ===============================================================
+  wire cep = fx68_phi1;
+  wire cen = fx68_phi2;
+
   always @(posedge clk_cpu) begin
     if (reset) begin
       wr9 <= 0;
       wr1_a <= 0;
       wr1_b <= 0;
-    end else begin
+    end else if (cen) begin
       if ((wreg_a || wreg_b) && (rindex == 9)) wr9 <= wdata[5:0];
       if (reset_a) wr1_a <= {2'b00, wr1_a[5], 2'b00, wr1_a[2], 2'b00};
       else if (wreg_a && rindex == 1) wr1_a <= wdata;
@@ -472,34 +476,38 @@ module mac128
       wr15_a <= 8'b11111000;
       wr15_b <= 8'b11111000;
     end else begin
-      rindex <= rindex_latch;
-      if (scc_cs && !rs[1]) begin
-        rindex_latch <= 0;
-        if (!cpu_rw && rindex == 0) begin
-          rindex_latch[2:0] <= wdata[2:0];
-          rindex_latch[3] <= wdata[5:3] == 3'b001;
+      if (cen) begin
+        rindex <= rindex_latch;
+        if (scc_cs && !rs[1]) begin
+          rindex_latch <= 0;
+          if (!cpu_rw && rindex == 0) begin
+            rindex_latch[2:0] <= wdata[2:0];
+            rindex_latch[3] <= wdata[5:3] == 3'b001;
+          end
+        end
+        if (rindex == 15) begin
+          if (wreg_a) wr15_a <= wdata;
+          if (wreg_b) wr15_b <= wdata;
         end
       end
-      if (do_extreset_a) begin
-        latch_open_a <= 1;
-        ex_irq_ip_a <= 0;
-      end else if (do_latch_a) begin
-        latch_open_a <= 0;
-        if (wr1_a[0]) ex_irq_ip_a <= 1;
+      if (cep) begin
+        if (do_extreset_a) begin
+          latch_open_a <= 1;
+          ex_irq_ip_a <= 0;
+        end else if (do_latch_a) begin
+          latch_open_a <= 0;
+          if (wr1_a[0]) ex_irq_ip_a <= 1;
+        end
+        if (do_extreset_b) begin
+          latch_open_b <= 1;
+          ex_irq_ip_b <= 0;
+        end else if (do_latch_b) begin
+          latch_open_b <= 0;
+          if (wr1_b[0]) ex_irq_ip_b <= 1;
+        end
+        if (do_latch_a) dcd_latch_a <= mouse_x1;
+        if (do_latch_b) dcd_latch_b <= mouse_y1;
       end
-      if (do_extreset_b) begin
-        latch_open_b <= 1;
-        ex_irq_ip_b <= 0;
-      end else if (do_latch_b) begin
-        latch_open_b <= 0;
-        if (wr1_b[0]) ex_irq_ip_b <= 1;
-      end
-      if (rindex == 15) begin
-        if (wreg_a) wr15_a <= wdata;
-        if (wreg_b) wr15_b <= wdata;
-      end
-      if (do_latch_a) dcd_latch_a <= mouse_x1;
-      if (do_latch_b) dcd_latch_b <= mouse_y1;
     end
   end
 
