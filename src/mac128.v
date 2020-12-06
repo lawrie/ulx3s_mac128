@@ -334,14 +334,15 @@ module mac128
   assign audio_l = {4{via_b_data_out[7]}};
   assign audio_r = audio_l;
 
+  reg [3:0] old_rindex;
   // Diagnostics
   always @(posedge clk_cpu) begin
     if (reset) begin
       diag16 <= 0;
     end else begin
       if (rom_cs) last_rom_addr <= cpu_addr;
-      if (last_rom_addr == 24'h401AE0) diag16 <= diag16 + 1;
-      //if (scc_irq && last_rom_addr == 24'h401aae && ram_cs && cpu_addr != 24'h1ba && ram_dout != 16'h0040 && diag16 == 0) diag16 <= ram_dout;
+      if (scc_cs && last_rom_addr == 24'h401A9E) diag16 <= cpu_din;
+      //if (scc_irq && rindex == 0 && old_rindex == 2) diag16 <= last_rom_addr;
     end
   end
 
@@ -465,6 +466,13 @@ module mac128
   end
 
   always @(posedge clk_cpu) begin
+    if (cen) rindex <= rindex_latch;
+    old_rindex <= rindex;
+  end
+
+  wire strange_read = cpu_rw && scc_cs & last_rom_addr == 24'h401a96;
+
+  always @(posedge clk_cpu) begin
     if (reset_scc) begin
       rindex_latch <= 0;
       ex_irq_ip_a <= 0;
@@ -477,10 +485,9 @@ module mac128
       wr15_b <= 8'b11111000;
     end else begin
       if (cen) begin
-        rindex <= rindex_latch;
         if (scc_cs && !rs[1]) begin
-          rindex_latch <= 0;
-          if (!cpu_rw && rindex == 0) begin
+          if (last_rom_addr != 24'h401a96 && last_rom_addr != 24'h401a9e) rindex_latch <= 0;
+          if ((!cpu_rw) && rindex == 0) begin
             rindex_latch[2:0] <= wdata[2:0];
             rindex_latch[3] <= wdata[5:3] == 3'b001;
           end
@@ -850,7 +857,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, mouse_x2, mouse_y1, mouse_x1, reset};
+  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, mouse_x2, mouse_y1, mouse_x1, strange_read};
 
   generate
   if(c_lcd_hex)
