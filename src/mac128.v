@@ -336,14 +336,12 @@ module mac128
   assign audio_l = {4{via_b_data_out[7]}};
   assign audio_r = audio_l;
 
-  reg [3:0] old_rindex;
   // Diagnostics
   always @(posedge clk_cpu) begin
     if (reset) begin
       diag16 <= 0;
     end else begin
       if (rom_cs) last_rom_addr <= cpu_addr;
-      if (scc8_cs && last_rom_addr == 24'h401A9E) diag16 <= cpu_din;
     end
   end
 
@@ -467,10 +465,9 @@ module mac128
     end
   end
 
-  // Set r_index from rindex_latch
+  // Delay setting r_index from rindex_latch until end of read or write cycle
   always @(posedge clk_cpu) begin
-    if (cen) rindex <= rindex_latch;
-    old_rindex <= rindex;
+    if (cen && cpu_as_n) rindex <= rindex_latch;
   end
 
   always @(posedge clk_cpu) begin
@@ -488,8 +485,7 @@ module mac128
       if (cen) begin
         // Set rindex_latch. r_index will be set of the next cycle.
         if (scc8_cs && !rs[1]) begin
-          // Temporary fix to make mouse work
-          if (last_rom_addr != 24'h401a96 && last_rom_addr != 24'h401a9e) rindex_latch <= 0;
+          rindex_latch <= 0;
           if ((!cpu_rw) && rindex == 0) begin
             rindex_latch[2:0] <= wdata[2:0];
             rindex_latch[3] <= wdata[5:3] == 3'b001;
