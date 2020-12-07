@@ -341,6 +341,7 @@ module mac128
     if (reset) begin
       diag16 <= 0;
     end else begin
+      diag16 <= iwm_dout;
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -527,7 +528,7 @@ module mac128
     .clk8(clk_cpu),
     ._reset(~reset),
     .selectIWM(iwm_cs),
-    ._cpuRW(~cpu_rw),
+    ._cpuRW(cpu_rw),
     ._cpuLDS(cpu_lds_n),
     .dataIn(cpu_dout),
     .cpuAddrRegHi(cpu_a[12:9]),
@@ -547,9 +548,7 @@ module mac128
   // CPU data in multiplexing
   assign cpu_din = via_cs ? {via_data_out_hi, 8'hEF} :   // VIA
                    scc8_cs ? {rdata, 8'hEF} :            // SCC for mouse
-                   cpu_addr == 24'hdffdfe ? 16'h1f1f :   // IWM temporary hack
-                   cpu_a[23] ? 0 :                       // Zero for all other peripheral addresses
-                   //ram_cs && ram_addr < 2048 ? low_ram_dout :
+                   iwm_cs ? iwm_dout :
                    ram_cs ? ram_dout : 
                    rom_cs ? rom_dout : 0;
 
