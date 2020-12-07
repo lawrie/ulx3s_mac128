@@ -235,35 +235,36 @@ module mac128
   // ===============================================================
   // SCC registers
   // ===============================================================
-  reg         dcd_latch_a, dcd_latch_b;
-  reg [3:0]   rindex, rindex_latch;
-  reg         latch_open_a, latch_open_b;
-  reg [7:0]   wr15_a, wr15_b; 
-  reg [7:0]   wr1_a, wr1_b;
-  reg [5:0]   wr9;
-  reg         ex_irq_ip_a, ex_irq_ip_b;
+  reg         dcd_latch_a, dcd_latch_b;   // Latches for x1 and y1 mouse inputs
+  reg [3:0]   rindex, rindex_latch;       // Index of register to read or write
+  reg         latch_open_a, latch_open_b; // Indicate if dcd latches are open
+  reg [7:0]   wr15_a, wr15_b;             // DCD interupt enable is bit 3
+  reg [7:0]   wr1_a, wr1_b;               // External interrupt enable is bit 0
+  reg [5:0]   wr9;                        // Master interrupt enable is bit 3 of WR9
+  reg         ex_irq_ip_a, ex_irq_ip_b;   // Set for mouse interrupts
 
-  wire        scc_irq = wr9[3] & (ex_irq_ip_a | ex_irq_ip_b);
-  wire        scc8_cs = scc_cs && (cpu_lds_n == 0 || cpu_uds_n == 0);
-  wire [1:0]  rs = cpu_a[2:1];
-  wire [7:0]  wdata = cpu_dout[15:8];
-  wire        wreg_a = scc8_cs & (~cpu_rw) & (~rs[1]) & rs[0];
-  wire        wreg_b = scc8_cs & (~cpu_rw) & (~rs[1]) & ~rs[0];
-  wire        do_extreset_a = wreg_a & (rindex == 0) & (wdata[5:3] == 3'b010);
-  wire        do_extreset_b = wreg_b & (rindex == 0) & (wdata[5:3] == 3'b010);
-  wire        dcd_ip_a = (mouse_x1 != dcd_latch_a) & wr15_a[3];
-  wire        dcd_ip_b = (mouse_y1 != dcd_latch_b) & wr15_b[3];
-  wire        do_latch_a = latch_open_a & dcd_ip_a;
-  wire        do_latch_b = latch_open_b & dcd_ip_b;
+  wire        scc_irq = wr9[3] & (ex_irq_ip_a | ex_irq_ip_b);          // SCC interrupt active
+  wire        scc8_cs = scc_cs && (cpu_lds_n == 0 || cpu_uds_n == 0);  // 8-bit SCC access
+  wire [1:0]  rs = cpu_a[2:1];                                         // Inicates channel and cmd/data
+  wire [7:0]  wdata = cpu_dout[15:8];                                  // Output data
+  wire        wreg_a = scc8_cs & (~cpu_rw) & (~rs[1]) & rs[0];         // Channel A write request
+  wire        wreg_b = scc8_cs & (~cpu_rw) & (~rs[1]) & ~rs[0];        // Channel B write request
+  wire        do_extreset_a = wreg_a & (rindex == 0) & (wdata[5:3] == 3'b010); // Channel A interrupt reset request
+  wire        do_extreset_b = wreg_b & (rindex == 0) & (wdata[5:3] == 3'b010); // Channel B interruptreset request
+  wire        dcd_ip_a = (mouse_x1 != dcd_latch_a) & wr15_a[3];        // DCD A interrupt pending
+  wire        dcd_ip_b = (mouse_y1 != dcd_latch_b) & wr15_b[3];        // DCD B interupt pending
+  wire        do_latch_a = latch_open_a & dcd_ip_a;                    // Request latch of DCD A
+  wire        do_latch_b = latch_open_b & dcd_ip_b;                    // Request latch of DCD B
+  // Requests to reset SCC or just channel A or channel B
   wire        reset_scc = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b11)) | reset;
   wire        reset_a   = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b10)) | reset_scc;
   wire        reset_b   = ((wreg_a | wreg_b) & (rindex == 9) & (wdata[7:6] == 2'b01)) | reset_scc;
-  wire [7:0]  rr0_a = {4'b0100, wr15_a[3] ? dcd_latch_a : mouse_x1, 3'b100};
-  wire [7:0]  rr0_b = {4'b0100, wr15_b[3] ? dcd_latch_b : mouse_y1, 3'b100};
-  wire [7:0]  rr3_a = {4'b0, ex_irq_ip_a, 2'b0, ex_irq_ip_b};
-  wire [2:0]  rr_vec_stat = ex_irq_ip_a ? 3'b101 : ex_irq_ip_b ? 3'b001 : 3'b011;
-  wire [7:0]  rr2_b = {4'b0, rr_vec_stat, 1'b0};
-  wire [7:0]  rdata = rindex == 0 && rs[0] ? rr0_a :
+  wire [7:0]  rr0_a = {4'b0100, wr15_a[3] ? dcd_latch_a : mouse_x1, 3'b100};       // RR0A
+  wire [7:0]  rr0_b = {4'b0100, wr15_b[3] ? dcd_latch_b : mouse_y1, 3'b100};       // RR0B
+  wire [2:0]  rr_vec_stat = ex_irq_ip_a ? 3'b101 : ex_irq_ip_b ? 3'b001 : 3'b011;  // RR2B used to read external interrupt status
+  wire [7:0]  rr2_b = {4'b0, rr_vec_stat, 1'b0};                                   // RR2B
+  wire [7:0]  rr3_a = {4'b0, ex_irq_ip_a, 2'b0, ex_irq_ip_b};                      // RR3A
+  wire [7:0]  rdata = rindex == 0 && rs[0] ? rr0_a :                               // Read data multiplexer
                       rindex == 0          ? rr0_b : 
                       rindex == 2 && rs[0] ? 0     :
                       rindex == 2          ? rr2_b :
@@ -451,6 +452,7 @@ module mac128
   wire cep = fx68_phi1;
   wire cen = fx68_phi2;
 
+  // Writes to registers 1 and 9. 9 shared between channels.
   always @(posedge clk_cpu) begin
     if (reset) begin
       wr9 <= 0;
@@ -458,13 +460,14 @@ module mac128
       wr1_b <= 0;
     end else if (cen) begin
       if ((wreg_a || wreg_b) && (rindex == 9)) wr9 <= wdata[5:0];
-      if (reset_a) wr1_a <= {2'b00, wr1_a[5], 2'b00, wr1_a[2], 2'b00};
+      if (reset_a) wr1_a <= {2'b00, wr1_a[5], 2'b00, wr1_a[2], 2'b00}; // Don't resets bits 2 and 5
       else if (wreg_a && rindex == 1) wr1_a <= wdata;
-      if (reset_b) wr1_b <= {2'b00, wr1_b[5], 2'b00, wr1_b[2], 2'b00};
+      if (reset_b) wr1_b <= {2'b00, wr1_b[5], 2'b00, wr1_b[2], 2'b00}; // Don't reset bits 2 and 5
       else if (wreg_b && rindex == 1) wr1_b <= wdata;
     end
   end
 
+  // Set r_index from rindex_latch
   always @(posedge clk_cpu) begin
     if (cen) rindex <= rindex_latch;
     old_rindex <= rindex;
@@ -483,18 +486,23 @@ module mac128
       wr15_b <= 8'b11111000;
     end else begin
       if (cen) begin
+        // Set rindex_latch. r_index will be set of the next cycle.
         if (scc8_cs && !rs[1]) begin
+          // Temporary fix to make mouse work
           if (last_rom_addr != 24'h401a96 && last_rom_addr != 24'h401a9e) rindex_latch <= 0;
           if ((!cpu_rw) && rindex == 0) begin
             rindex_latch[2:0] <= wdata[2:0];
             rindex_latch[3] <= wdata[5:3] == 3'b001;
           end
         end
+        // Register 15 just used for DCD interrupt enable
         if (rindex == 15) begin
           if (wreg_a) wr15_a <= wdata;
           if (wreg_b) wr15_b <= wdata;
         end
       end
+      // Latch mouse inputs and request interrupts
+      // do_extreset_a or _b reopens latch and resets interrupt
       if (cep) begin
         if (do_extreset_a) begin
           latch_open_a <= 1;
