@@ -82,7 +82,7 @@ module mac128
     .out0_hz(125*1000000),
     .out1_hz( 25*1000000),
     .out2_hz(125*1000000),                // SDRAM core
-    .out3_hz(125*1000000), .out3_deg(180) // SDRAM chip 45-330:ok 0-30:not
+    .out3_hz(125*1000000), .out3_deg(180) // Not used
   )
   ecp5pll_inst
   (
@@ -199,7 +199,6 @@ module mac128
   reg         via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
   
   // Set auto-vectoring for interrupts
-  //assign      vpa_n = (!cpu_a[23] | cpu_as_n) & !(cpu_fc0 & cpu_fc1 & cpu_fc2);
   assign      vpa_n = !(cpu_fc0 & cpu_fc1 & cpu_fc2);
 
   // ===============================================================
@@ -278,7 +277,7 @@ module mac128
   reg [1:0]   insert_disk;
   wire [1:0]  disk_in_drive;
   wire [21:0] extra_rom_read_addr;
-  reg         extra_rom_read_ack;
+  wire        extra_rom_read_ack = 1;
   wire [7:0]  extra_rom_read_data; 
 
   // ===============================================================
@@ -341,7 +340,7 @@ module mac128
     if (reset) begin
       diag16 <= 0;
     end else begin
-      diag16 <= iwm_dout;
+      diag16 <= extra_rom_read_addr;
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -665,6 +664,15 @@ module mac128
     .addr(spi_ram_addr),
     .data_in(spi_ram_di),
     .data_out(spi_ram_do)
+  );
+
+  wire disk_ram_write = spi_ram_wr && spi_ram_addr[31:24] == 8'hD1;
+  ram8 #(.MEM_INIT_FILE("../roms/disk608.mem")) ram_disk (
+    .clk(clk_cpu),
+    .we(disk_ram_write),
+    .addr(disk_ram_write ? spi_ram_addr : extra_rom_read_addr),
+    .dout(extra_rom_read_data),
+    .din(spi_ram_do)
   );
 
   // Used for interrupt to ESP32
