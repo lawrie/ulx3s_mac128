@@ -246,8 +246,8 @@ module mac128
   wire        scc8_cs = scc_cs && (cpu_lds_n == 0 || cpu_uds_n == 0);  // 8-bit SCC access
   wire [1:0]  rs = cpu_a[2:1];                                         // Inicates channel and cmd/data
   wire [7:0]  wdata = cpu_dout[15:8];                                  // Output data
-  wire        wreg_a = scc8_cs & (~cpu_rw) & (~rs[1]) & rs[0];         // Channel A write request
-  wire        wreg_b = scc8_cs & (~cpu_rw) & (~rs[1]) & ~rs[0];        // Channel B write request
+  wire        wreg_a = scc8_cs & ~cpu_rw & ~rs[1] & rs[0];           // Channel A write request
+  wire        wreg_b = scc8_cs & ~cpu_rw & ~rs[1] & ~rs[0];          // Channel B write request
   wire        do_extreset_a = wreg_a & (rindex == 0) & (wdata[5:3] == 3'b010); // Channel A interrupt reset request
   wire        do_extreset_b = wreg_b & (rindex == 0) & (wdata[5:3] == 3'b010); // Channel B interruptreset request
   wire        dcd_ip_a = (mouse_x1 != dcd_latch_a) & wr15_a[3];        // DCD A interrupt pending
@@ -274,7 +274,7 @@ module mac128
   // ===============================================================
   wire        disk_sel = via_a_data_out[5];
   wire [15:0] iwm_dout;
-  wire [1:0]  insert_disk = 2'b01;
+  wire [1:0]  insert_disk = sw[0];
   wire [1:0]  disk_in_drive;
   wire [21:0] extra_rom_read_addr;
   wire        extra_rom_read_ack = 1;
@@ -312,12 +312,15 @@ module mac128
   // Set interrupt
   assign {ipl2_n, ipl1_n, ipl0_n} = via_irq ? 3'b110 : scc_irq ? 3'b101 : 3'b111;
 
+  // VIA uses high byte
+  wire [7:0] data_in_hi = cpu_dout[15:8];
+
   // Shift register for keyboard
   always @(posedge clk_cpu) begin
     if (reset) begin
       via_sr <= 0;
     end else begin
-      if (via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'hA) via_sr <= cpu_dout[15:8];
+      if (via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'hA) via_sr <= data_in_hi;
       if (via_acr[4:2] == 3'b011 && kbd_in_strobe) via_sr <= kbd_in_data;
     end
   end
@@ -342,8 +345,7 @@ module mac128
     if (reset) begin
       diag16 <= 0;
     end else begin
-      if (last_rom_addr == 24'h418b88) diag16 <= diag16 + 1;
-      //if (extra_rom_read_addr[15:0] == 29) diag16 <= {side, track, extra_rom_read_data};
+      if (last_rom_addr == 24'h418ce8) diag16 <= diag16 + 1;
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -352,9 +354,6 @@ module mac128
   reg [4:0] clk_div;
   wire timer_strobe = (clk_div == 0);
   always @(posedge clk_cpu) clk_div <= clk_div + 1; 
-
-  // VIA uses high byte
-  wire [7:0] data_in_hi = cpu_dout[15:8];
 
   // VIA register writes
   always @(posedge clk_cpu) begin
@@ -412,6 +411,7 @@ module mac128
           endcase
         end
       end
+      // External interrupts
       old_vSync <= vSync;
       if (vSync == 0 & old_vSync == 1) begin
         via_ifr[`INT_VBLANK] <= 1;
@@ -421,6 +421,14 @@ module mac128
           vsync_cnt <= 0;
         end
       end
+      if (timer_strobe && !load_t2) begin
+        if (via_timer2_armed && via_timer2_count == 0) begin
+          via_ifr[`INT_T2] <= 1;
+          via_timer2_armed <= 0;
+        end
+        via_timer2_count <= via_timer2_count -1;
+      end
+      if (via_acr[4:2] == 3'b011 && kbd_in_strobe) via_ifr[`INT_KEYREADY] <= 1;
     end
   end
 
@@ -489,7 +497,7 @@ module mac128
         // Set rindex_latch. r_index will be set of the next cycle.
         if (scc8_cs && !rs[1]) begin
           rindex_latch <= 0;
-          if ((!cpu_rw) && rindex == 0) begin
+          if (!cpu_rw && rindex == 0) begin
             rindex_latch[2:0] <= wdata[2:0];
             rindex_latch[3] <= wdata[5:3] == 3'b001;
           end
@@ -709,17 +717,6 @@ module mac128
   // ===============================================================
   // SDRAM
   // ===============================================================
-
-  // Use BRAM for first 1024 words as temporary fix
-  //ram ram_i (
-  //  .clk(clk_cpu),
-  //  .addr(ram_addr[10:1]),
-  //  .din(cpu_dout),
-  //  .we(ram_cs && !cpu_rw && ram_addr < 2048),
-  //  .dout(low_ram_dout),
-  //  .ub(!cpu_uds_n),
-  //  .lb(!cpu_lds_n)
-  //);
 
   wire we = spi_ram_word_wr;
   wire re = spi_ram_addr[31:24] == 8'h00 ? spi_ram_rd : 1'b0;
