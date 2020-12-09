@@ -274,11 +274,13 @@ module mac128
   // ===============================================================
   wire        disk_sel = via_a_data_out[5];
   wire [15:0] iwm_dout;
-  reg [1:0]   insert_disk;
+  wire [1:0]  insert_disk = 2'b01;
   wire [1:0]  disk_in_drive;
   wire [21:0] extra_rom_read_addr;
   wire        extra_rom_read_ack = 1;
   wire [7:0]  extra_rom_read_data; 
+  wire [6:0]  track;
+  wire        side;
 
   // ===============================================================
   // Address decoding
@@ -340,7 +342,8 @@ module mac128
     if (reset) begin
       diag16 <= 0;
     end else begin
-      diag16 <= extra_rom_read_addr;
+      if (last_rom_addr == 24'h418b88) diag16 <= diag16 + 1;
+      //if (extra_rom_read_addr[15:0] == 29) diag16 <= {side, track, extra_rom_read_data};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -391,8 +394,8 @@ module mac128
                                                                            // Peripheral Control Reg
             4'hD: via_ifr <= via_ifr & ~data_in_hi[6:0];                   // Interrupt Flag Register
             4'hE: if (data_in_hi[7]) via_ier <= via_ier | data_in_hi[6:0]; // Interrupt Enable Register
-                  else via_ier <= via_ier & ~data_in_hi[6:0];              // Port B
-            4'hF: via_a_data_out <= data_in_hi;                          
+                  else via_ier <= via_ier & ~data_in_hi[6:0];              
+            4'hF: via_a_data_out <= data_in_hi;                            // Port A
           endcase
         end else begin // register reads triggering interrupts
           case (cpu_a[12:9])
@@ -537,7 +540,9 @@ module mac128
     .diskInDrive(disk_in_drive),
     .extraRomReadAddr(extra_rom_read_addr),
     .extraRomReadAck(extra_rom_read_ack),
-    .extraRomReadData(extra_rom_read_data)
+    .extraRomReadData(extra_rom_read_data),
+    .track(track),
+    .side(side)
   );
 
   // ===============================================================
@@ -866,7 +871,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, mouse_x2, mouse_y1, mouse_x1, reset};
+  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, mouse_x2, iwm_cs, disk_in_drive[0], disk_sel};
 
   generate
   if(c_lcd_hex)

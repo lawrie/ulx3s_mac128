@@ -1,6 +1,6 @@
 module ram8 (
   input             clk,
-  input [13:0]      addr,
+  input [14:0]      addr,
   input [7:0]       din,
   input             we,
   output reg [7:0] dout,
@@ -8,7 +8,7 @@ module ram8 (
 
   parameter MEM_INIT_FILE = "";
    
-  reg [7:0] rom [0:12287];
+  reg [7:0] rom [0:24575];
 
   initial
     if (MEM_INIT_FILE != "")

@@ -44,7 +44,9 @@ module iwm(
 	
 	output [21:0] extraRomReadAddr,
 	input extraRomReadAck,
-	input [7:0] extraRomReadData
+	input [7:0] extraRomReadData,
+	output [6:0] track,
+	output side
 );
 
 	wire [7:0] dataInLo = dataIn[7:0];
@@ -89,7 +91,9 @@ module iwm(
 		.diskInDrive(diskInDrive[0]),
 		.extraRomReadAddr(extraRomReadAddr),
 		.extraRomReadAck(extraRomReadAck),
-		.extraRomReadData(extraRomReadData));
+		.extraRomReadData(extraRomReadData),
+		.track(track),
+		.side(side));
 	floppy floppyExt(
 		.clk8(clk8),
 		._reset(_reset),

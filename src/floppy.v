@@ -78,7 +78,9 @@ module floppy(
 	
 	output [21:0] extraRomReadAddr,
 	input extraRomReadAck,
-	input [7:0] extraRomReadData
+	input [7:0] extraRomReadData,
+	output [6:0] track,
+	output side
 );
 
 	reg [15:0] driveRegs;
@@ -86,6 +88,10 @@ module floppy(
 	reg driveSide;
 	reg [7:0] diskDataIn; // incoming byte from the floppy disk
 	
+
+	assign track = driveTrack;
+	assign side = driveSide;
+
 	// read drive registers
 	wire [15:0] driveRegsAsRead = {
 		1'b0, // DRVIN = yes
