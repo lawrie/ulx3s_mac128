@@ -1,0 +1,478 @@
+Name          Addr  Size  Description
+------------  ----  ----  -----------------
+              0060        spurious interrupt
+              0064        level 1 interrupt - VIA (SY6522)
+              0068        level 2 interrupt - SCC (Z8530)
+              006C        level 3 interrupt - VIA and SCC together
+              0070        level 4 interrupt - debug switch
+              0074        level 5 interrupt - debug switch and VIA
+              0078        level 6 interrupt - debug switch and SCC
+              007C        level 7 interrupt - debug switch VIA, SCC (all 3 together)
+              0080-BF     TRAP instruction vectors
+              00C0-FF     [reserved by Motorola]
+
+SysCom        0100  -     start of System communication area
+MonkeyLives   0100  word  monkey lives if nonzero
+ScrVRes       0102  word  screen vertical dots/inch
+ScrHRes       0104  word  screen horizontal dots/inch
+ScreenRow     0106  word  rowBytes of screen
+MemTop        0108  long  ptr to end of RAM
+BufPtr        010C  long  ptr to end of jump table
+StkLowPt      0110  long  lowest stack pointer value as measured in VBL task
+HeapEnd       0114  long  ptr to end of application heap
+TheZone       0118  long  ptr to current heap zone
+UTableBase    011C  long  ptr to unit I/O table
+MacJmp        0120  long  ptr to jump vector table used by MacsBug
+DskRtnAdr     0124  long  temporary pointer used by Disk Driver
+*TwiggyVars   0128  long  ptr to 'other' driver variables (Lisa 5.25" drive)
+PollRtnAddr   0128  long  ptr to 'other' driver variables (Lisa 5.25" drive)
+DskVerify     012C  byte  used by Mac 3.5" Disk Driver for read/verify
+LoadTrap      012D  byte  trap before launch?
+MmInOK        012E  byte  Initial Memory Manager checks ok?
+*DskWr11      012F  byte  try 1-1 disk writes?
+CPUFlag       012F  byte  code for installed CPU: 0=68000, 1=68010, 2=68020, 3=68030
+ApplLimit     0130  long  address of application heap limit
+SonyVars      0134  long  ptr to Mac 3.5" Disk Driver variables
+PWMValue      0138  word  current PWM value
+PollStack     013A  long  address of SCC poll data start stack location
+PollProc      013E  long  ptr to SCC poll data procedure
+DskErr        0142  word  disk routine result code
+SysEvtMask    0144  word  system event mask
+SysEvtBuf     0146  long  ptr to system event queue element buffer
+EventQueue    014A  10    event queue header
+EvtBufCnt     0154  word  maximum #of events in SysEvtBuf minus 1
+RndSeed       0156  long  random number seed
+SysVersion    015A  word  System file version number (e.g. System 4.1=$0410)
+SEvtEnb       015C  byte  0 = SysEvent always returns FALSE
+DSWndUpdate   015D  byte  GetNextEvent not to paint behind System error dialog?
+FontFlag      015E  byte  font manager loop flag
+Filler3       015F  byte  1 byte of filler
+VBLQueue      0160  10    VBL queue header
+Ticks         016A  long  Tick count: time since system startup (tick=1/60 sec)
+MBTicks       016E  long  tick count when mouse button was last pressed
+MBState       0172  byte  current mouse button state
+Tocks         0173  byte  Lisa sub-tick count
+KeyMap        0174  8     bitmap of the keyboard
+KeypadMap     017C  long  bitmap for numeric keypad (uses 18 bits)
+[????]        0180  long  
+KeyLast       0184  word  ASCII code for last valid keycode
+KeyTime       0186  long  tickcount when KEYLAST was received
+KeyRepTime    018A  long  tick count when key was last repeated
+KeyThresh     018E  word  threshold for key repeat
+KeyRepThresh  0190  word  key repeat speed
+Lv11DT        0192  32    Level-1 secondary interrupt vector table
+                          00401AE8
+						  00401B12
+						  004025E4
+						  00401B10
+						  00401B10
+						  004176B0
+						  00401B10
+						  00401B10
+Lv12DT        01B2  32    Level-2 secondary interrupt vector table
+                          00401B10
+						  00401AB6
+						  00401B10
+						  00401B10
+						  00401B10
+						  00401AC2
+						  00401B10
+						  00401B10
+UnitNtryCnt   01D2  word  count of entries in unit table
+VIA           01D4  long  base address of 6522 VIA chip 
+SCCRd         01D8  long  addr of Z8530 SCC chip (used when reading the chip)
+SCCWr         01DC  long  address of Z8530 SCC chip (used when writing the chip)
+IWM           01E0  long  base address of IWM chip (floppy drive controller)
+scratch20     01E4  20    general scratch area
+SysParam      01F8  -     System parameter RAM vars (PRAM info)
+SPValid       01F8  byte  validation: $A8 if last write to clock chip was good
+SPATalkA      01F9  byte  AppleTalk node ID for modem port
+SPATalkB      01FA  byte  AppleTalk node ID for printer port
+SPConfig      01FB  byte  serial-port-in-use flags for both ports
+SPPortA       01FC  word  modem port configuration (baud, parity, bits)
+SPPortB       01FE  word  printer port configuration (baud, parity, bits)
+SPAlarm       0200  long  alarm clock setting
+SPFont        0204  word  font number of application font minus 1
+*SPKbdPrint   0206  word  auto-key threshold/rate and printer connection
+SPKbd         0206  byte  auto-key threshold and rate
+SPPrint       0207  byte  printer connection
+*SPVolClik    0208  word  speaker volume; double click and caret flash times
+SPVolCtl      0208  byte  speaker volume
+SPClikCaret   0209  byte  double click and caret flash times
+SPMisc        020A  byte  reserved for future use
+SPMisc2       020B  byte  mouse tracking, startup floppy drive, menu blink
+Time          020C  long  current date/time (seconds since midnight 1 JAN 1904)
+*BootDrive    0210  word  drive number of boot drive
+BootDrive     0210  word  working directory reference number of boot disk
+JShell        0212  word  journaling shell state
+*Filler3A     0214  word  negative of vRefNum last seen by Standard File Package
+SFSaveDisk    0214  word  negative of vRefNum last seen by Standard File Package
+KbdVars       0216  -     Keyboard manager variables
+[????]        0216  word  
+KbdLast       0218  byte  ADB address of keyboard last used
+[????]        0219  byte  
+JKybdTask     021A  long  ptr to keyboard VBL task hook
+KbdType       021E  byte  keyboard model number
+AlarmState    021F  byte  alarm clock: Bit7=parity, Bit6=beeped, Bit0=enable
+*CurIOTrap    0220  word  current I/O trap being executed
+MemErr        0220  word  Memory Manager error code
+DiskVars      0222  -     Disk driver variables (60 bytes)
+[????]        0222  60     [Editor note: ignore this line]
+FlEvtMask     025E  word  mask of flushable events (FlushEvents)
+SdVolume      0260  byte  Current speaker volume (bits 0 through 2 only)
+SdEnable      0261  byte  Sound enabled?
+SoundVars     0262  -     Sound driver variables (32 bytes)
+SoundPtr      0262  long  pointer to 4-voice sound definition (SynthRec)
+SoundBase     0266  long  ptr to free-form sound definition (SynthRec)
+SoundVBL      026A  16    vertical retrace control element
+SoundDCE      027A  long  pointer to Sound Driver's device control entry
+SoundActive   027E  byte  sound is active?
+SoundLevel    027F  byte  current amplitude in 740-byte sound buffer
+CurPitch      0280  word  current value of COUNT in square-wave SynthRec
+SoundLast     0282  long  address past last sound variable
+[????]        0286  long  
+[????]        028A  long  
+ROM85         028E  word  holds a positive value if 128K or later ROM in Mac
+PortAUse      0290  byte  Port A usage: if zero, port available
+PortBUse      0291  byte  Port B usage: if zero, port available
+ScreenVars    0292  -     Screen driver variables (8 bytes)
+[????]        0292  long  
+[????]        0296  long  
+JGNEFilter    029A  long  ptr to GetNextEvent filter procedure
+Key1Trans     029E  long  ptr to keyboard translator procedure
+Key2Trans     02A2  long  ptr to numeric keypad translator procedure
+SysZone       02A6  long  starting address of system heap zone
+ApplZone      02AA  long  starting address of application heap zone
+ROMBase       02AE  long  base address of ROM (Trap Dispatcher)
+RAMBase       02B2  long  base address of RAM (Trap Dispatcher)
+BasicGlob     02B6  long  ptr to BASIC globals
+DSAlertTab    02BA  long  ptr to system error alert table in use
+ExtStsDT      02BE  16    External/status interrupt vector table
+SCCASts       02CE  byte  SCC read register 0 last external/status interrupt - A
+SCCBSts       02CF  byte  SCC read register 0 last external/status interrupt - B
+SerialVars    02D0  -     async driver variables (16 bytes) 
+[????]        02D0  long  
+[????]        02D4  long  
+ABusVars      02D8  long  ptr to AppleTalk variables
+[????]        02DC  long  
+FinderName    02E0  16    name of the shell, usually "Finder" (STRING[15])
+DoubleTime    02F0  long  double click interval in ticks
+CaretTime     02F4  long  caret blink interval in ticks
+ScrDmpEnb     02F8  byte  screen dump enable - zero disables FKEY processing
+ScrDmpType    02F9  byte  $FF dumps screen, $FE dumps front window (FKEY 4)
+TagData       02FA  -     sector tag info for disk drivers (14 bytes)
+[????]        02FA  word  
+BufTgFNum     02FC  long  File tags buffer: file number
+BufTgFFlg     0300  word  File tags buffer: flags (bit1=1 if resource fork)
+BufTgFBkNum   0302  word  File tags buffer: logical block number
+BufTgDate     0304  long  File tags buffer: last modification date/time
+DrvQHdr       0308  10    queue header of drives in system
+PWMBuf2       0312  long  ptr to PWM buffer 1 (or 2 if sound)
+HpChk         0316  long  heap check RAM code
+*MaskBC       031A  long  Memory Manager byte count mask
+*MaskHandle   031A  long  Memory Manager handle mask
+¥MaskPtr      031A  long  Memory Manager pointer mask
+Lo3Bytes      031A  long  holds the constant $00FFFFFF
+MinStack      031E  long  minimum stack size used in InitApplZone
+DefltStack    0322  long  default size of stack
+MMDefFlags    0326  word  default zone flags
+GZRootHnd     0328  long  root handle for GrowZone
+GZRootPtr     032C  long  root pointer for GrowZone
+GZMoveHnd     0330  long  moving handle for GrowZone
+DSDrawProc    0334  long  ptr to alternate system error draw procedure
+EjectNotify   0338  long  ptr to eject notify procedure
+IAZNotify     033C  long  ptr to world swaps notify procedure
+FileVars      0340  -     file system vars (184 bytes)
+CurDB/CkdDB   0340  word  current dir block/used for searches
+*FSCallAsync  0342  word  "One byte free"
+NxtDB         0342  word  
+MaxDB         0344  word  
+FlushOnly     0346  byte  flag used by UnMountVol and FlushVol
+RegRsrc       0347  byte  flag used by OpenRF and FileOpen
+FLckUnlck     0348  byte  flag used by SetFilLock and RstFilLock
+FrcSync       0349  byte  when set, all file system calls are synchronized
+NewMount      034A  byte  used by MountVol to flag new mounts
+NoEject       034B  byte  used by Eject and Offline
+DrMstrBlk     034C  word  master directory block in a volume
+HFS Globals   034E  -     HFS global variables (168 bytes)
+FCBSPtr       034E  long  ptr to file control block buffer
+DefVCBPtr     0352  long  ptr to default volume control block
+VCBQHdr       0356  10    volume control block queue header
+FSQHdr        0360  10    file I/O queue header
+HFSVars       036A  -     Start of TFS variables (RAM version)
+HFSStkTop     036A  long  Temp location of stack ptr during async calls
+HFSStkPtr     036E  long  Temporary location of HFS stack ptr
+WDCBsPtr      0372  long  Working Directory queue header
+HFSFlags      0376  byte  Internal HFS flags
+*SysCRefCnt   0377  byte  system cache usage count (#of vols)
+CacheFlag     0377  byte  system cache usage count now used as cache flag
+SysBMCPtr     0378  long  System-wide bitmap cache pointer
+SysVolCPtr    037C  long  System-wide volume cache pointer
+SysCtlCPtr    0380  long  System-wide control cache pointer
+DefVRefNum    0384  word  Default volume's VRefNum/WDRefNum
+PMSPPtr       0386  long  ptr to list of directories on PMSP
+HFSDSErr      0392  word  Final gasp - error that caused IOErr
+HFSVarEnd     0394  -     End of HFS variable area
+CacheVars     0394  8     
+CurDirStore   0398  word  ID of last directory opened
+[????]        039A  word  
+CacheCom      039C  long  
+[????]        03A0  word  
+ErCode        03A2  word  report errors here during async routines
+Params        03A4  -     File Mgr I/O ParamBlock (50 bytes)
+[????]        03A4  50     
+FSTemp8       03D6  8     used by Rename
+*FSTemp4      03DE  word  used by Rename and CkFilMod
+FSIOErr       03DE  word  last I/O error
+[????]        03E0  word  
+FSQueueHook   03E2  long  ptr to hook to capture all FS calls
+ExtFSHook     03E6  long  ptr to command done hook
+DskSwtchHook  03EA  long  ptr to hook for disk-switch dialog
+ReqstVol      03EE  long  ptr to offline or external file system volume VCB
+ToExtFS       03F2  long  ptr to external file system
+FSVarEnd      03F6  -     end of file system variables
+FSFCBLen      03F6  word  size of file control block; holds -1 on 64K ROM Macs
+DSAlertRect   03F8  8     rectangle for system error and disk-switch alerts
+
+*DispatchTab  0400  1024  OS & Toolbox trap dispatch table (64K ROM) (512 words)
+OSDispTable   0400  1024  OS trap dispatch table(128K and later ROM) (256 longs)
+
+Name          Addr  Size  Description
+------------  ----  ----  ------------------------------------------------------
+GRAFBEGIN     0800  -     graf (QuickDraw) global area
+JHideCursor   0800  long  
+JShowCursor   0804  long  
+JShieldCursor 0808  long  
+JScrnAddr     080C  long  
+JScrnSize     0810  long  
+JInitCrsr     0814  long  
+JSetCrsr      0818  long  
+JCrsrObscure  081C  long  
+JUpdateProc   0820  long  
+LGrafJump     0824  long  
+GrafVar       0824  -     QuickDraw variables
+ScrnBase      0824  long  base address of main screen
+MTemp         0828  long  low-level interrupt mouse location
+RawMouse      082C  long  un-jerked mouse coordinates
+NMouse        0830  long  processed mouse coordinate
+CrsrPin       0834  8     cursor pinning rectangle
+CrsrRect      083C  8     cursor hit rectangle
+TheCrsr       0844  68    cursor data, mask & hotspot
+CrsrAddr      0888  long  address of data under cursor
+*CrsrSave     088C  64    data under the cursor [Editor's note: 64K ROM only]
+CrsrSave      088C  long  ptr to data under the cursor
+[????]        0890  20    
+MainDevice    08A4  long  handle to current main device
+DeviceList    08A8  long  handle to first element in device list
+[????]        08AC  long  
+QDColors      08B0  28    default QuickDraw colors
+CrsrVis       08CC  byte  cursor visible?
+CrsrBusy      08CD  byte  cursor locked out?
+CrsrNew       08CE  byte  cursor changed?
+CrsrCouple    08CF  byte  cursor coupled to mouse?
+CrsrState     08D0  word  cursor nesting level
+CrsrObscure   08D2  byte  Cursor obscure semaphore
+CrsrScale     08D3  byte  cursor scaled?
+[????]        08D4  word  
+MouseMask     08D6  long  V-H mask for ANDing with mouse
+MouseOffset   08DA  long  V-H offset for adding after ANDing
+JournalFlag   08DE  word  journaling state
+JSwapFont     08E0  long  jump entry for FMSwapFont
+*JFontInfo    08E4  long  jump entry for FMFontMetrics
+WidthListHand 08E4  long  handle to a list of handles of recently-used width
+                          tables
+JournalRef    08E8  word  Journalling driver's refnum
+[????]        08EA  word  
+CrsrThresh    08EC  word  delta threshold for mouse scaling
+JCrsrTask     08EE  long  address of CrsrVBLTask
+GRAFEND       08F2  -     End of graphics globals
+WWExist       08F2  byte  window manager initialized?
+DExist        08F3  byte  QuickDraw is initialized
+JFetch        08F4  long  ptr to fetch-a-byte routine for drivers
+JStash        08F8  long  ptr to stash-a-byte routine for drivers
+JIODone       08FC  long  ptr to IODone routine for drivers
+LoadVars      0900  -     Segment Loader variables (68 bytes)
+CurApRefNum   0900  word  refNum of current application's resFile
+LaunchFlag    0902  byte  Tells whether Launch or Chain was last called
+[????]        0903  byte  
+CurrentA5     0904  long  current value of register A5
+CurStackBase  0908  long  ptr to the base (beginning) of the stack
+[????]        090C  long  
+CurApName     0910  32    name of current application (STRING[31])
+SaveSegHandle 0930  long  handle to segment 0 (CODE 0)
+CurJTOffset   0934  word  current jump table offset from register A5
+CurPageOption 0936  word  current page 2 configuration (screen/sound buffers)
+HiliteMode    0938  word  set to -1 if hilighting mode is on, 0 otherwise
+LoaderPBlock  093A  10    param block for ExitToShell
+*PrintVars    0944  16    print code variables
+*LastLGlobal  0944  long  address past last loader global
+PrintErr      0944  word  Print Manager error code
+[????]        0946  14    
+*CoreEditVars 0954  12    core edit variables
+LastPGlobal   0954  long  address of last printer global
+[????]        0958  long  
+[????]        095C  long  
+scrapVars     0960  -     Scrap Manager variables (32 bytes)
+*scrapInfo    0960  long  scrap length
+scrapSize     0960  long  scrap length
+scrapHandle   0964  long  handle to RAM scrap
+scrapCount    0968  word  count changed by ZeroScrap
+scrapState    096A  word  scrap state: tells if scrap exists in RAM or on disk
+scrapName     096C  long  pointer to scrap file name (normally "Clipboard File")
+scrapTag      0970  16    scrap file name (STRING[15])
+scrapEnd      0980  -     End of scrap vars
+ToolGBase     0980  -     base address of toolbox globals
+ToolVars      0980  -     toolbox variables
+RomFont0      0980  long  handle to system font
+*ApFontID     0984  word  resource ID of application font
+ApFontID      0984  word  font number of application font
+GotStrike     0986  byte  Do we have the strike?
+FMDefaultSize 0987  byte  default size
+*CurFMInput   0988  long  ptr to QuickDraw FMInput record
+CurFMFamily   0988  word  current font family
+CurFMSize     098A  word  current font size
+CurFMFace     098C  byte  current font face
+CurFMNeedBits 098D  byte  boolean telling whether it needs strike
+CurFMDevice   098E  word  current font device
+CurFMNumer    0990  long  current numerator of scale factor
+CurFMDenom    0994  long  current denominator of scale factor
+FMgrOutRec    0998  long  ptr to QuickDraw FontOutput record
+FOutError     0998  word  Font Manager error code
+TFOutFontHandle 099A long handle to font bits
+FOutBold      099E  byte  bolding factor
+FOutItalic    099F  byte  italic factor
+FOutULOffset  09A0  byte  underline offset
+FOutULShadow  09A1  byte  underline halo
+FOutULThick   09A2  byte  underline thickness
+FOutShadow    09A3  byte  shadow factor
+FOutExtra     09A4  byte  extra horizontal width
+FOutAscent    09A5  byte  height above baseline
+FOutDescent   09A6  byte  height below baseline
+FOutWidMax    09A7  byte  maximum width of character
+FOutLeading   09A8  byte  space between lines
+FOutUnused    09A9  byte  unused (padding) byte -must have even number
+FOutNumer     09AA  long  point for numerators of scale factor
+FOutDenom     09AE  long  point for denominators of scale factor
+FMDotsPerInch 09B2  long  h,v dotsPerInch (resolution) of current device
+FMStyleTab    09B6  24    style heuristic table given by device
+ToolScratch   09CE  8     scratch area
+WindowList    09D6  long  ptr to Z-ordered linked list of windows
+SaveUpdate    09DA  word  Enable update events?
+PaintWhite    09DC  word  erase windows before update event?
+WMgrPort      09DE  long  ptr to window manager's grafport
+DeskPort      09E2  long  ptr to Desk grafPort (Whole screen)
+OldStructure  09E6  long  handle to saved structure region
+OldContent    09EA  long  handle to saved content region
+GrayRgn       09EE  long  handle to rounded-corner region drawn as the desktop
+SaveVisRgn    09F2  long  handle to temporarily saved visRegion
+DragHook      09F6  long  ptr to user hook called during dragging
+scratch8      09FA  8     general scratch area
+TempRect      09FA  8     scratch rectangle
+OneOne        0A02  long  holds the constant $00010001
+MinusOne      0A06  long  holds the constant $FFFFFFFF
+TopMenuItem   0A0A  word  pixel value of top of scrollable menu
+AtMenuBottom  0A0C  word  flag for menu scrolling
+IconBitmap    0A0E  14    scratch bitmap used for plotting things
+MenuList      0A1C  long  handle to current menuBar list structure
+MBarEnable    0A20  word  menuBar enable for desk acc's that own the menu bar
+CurDeKind     0A22  word  window kind of deactivated window
+MenuFlash     0A24  word  flash feedback count
+TheMenu       0A26  word  resource ID of hilited menu
+SavedHandle   0A28  long  handle to data under a menu
+*MrMacHook    0A2C  long  Mr. Macintosh hook
+MBarHook      0A2C  long  ptr to MenuSelect hook called before menu is drawn
+MenuHook      0A30  long  ptr to user hook called during MenuSelect
+DragPattern   0A34  8     pattern used to draw outlines of dragged regions
+DeskPattern   0A3C  8     pattern used for the desktop
+DragFlag      0A44  word  implicit parameter to DragControl
+CurDragAction 0A46  long  ptr to implicit actionProc for dragControl
+FPState       0A4A  6     floating point state
+TopMapHndl    0A50  long  handle to map of most recently opened resource file
+SysMapHndl    0A54  long  handle to map of System resourc file
+SysMap        0A58  word  reference number of System resource file
+CurMap        0A5A  word  reference number of current resource file
+ResReadOnly   0A5C  word  Read-only flag
+ResLoad       0A5E  word  Auto-load feature
+ResErr        0A60  word  Resource Manager error code
+TaskLock      0A62  byte  re-entering SystemTask
+FScaleDisable 0A63  byte  disable font scaling?
+CurActivate   0A64  long  ptr to window slated for activate event
+CurDeactive   0A68  long  ptr to window slated for deactivate event
+DeskHook      0A6C  long  ptr to hook for painting the desk
+TEDoText      0A70  long  ptr to textEdit doText proc hook
+TERecal       0A74  long  ptr to textEdit recalText proc hook
+*MicroSoft    0A78  12    ApplScratch - for Seattle font
+ApplScratch   0A78  12    application scratch area
+GhostWindow   0A84  long  ptr to window never to be considered frontmost
+CloseOrnHook  0A88  long  ptr to hook for closing desk ornaments
+ResumeProc    0A8C  long  ptr to Resume procedure (System error dialog)
+SaveProc      0A90  long  address of Save failsafe procedure
+SaveSP        0A94  long  Safe stack ptr for restart or save
+ANumber       0A98  word  resID of last alert
+ACount        0A9A  word  number of times last alert was called (0 through 3)
+DABeeper      0A9C  long  ptr to current beep routine
+DAStrings     0AA0  16    paramText substitution strings (4 handles)
+TEScrpLengt   0AB0  long  textEdit Scrap Length
+TEScrpHandl   0AB4  long  handle to textEdit Scrap
+AppPacks      0AB8  32    Handles to PACK resources (ID's from 0 to 7)
+SysResName    0AD8  20    name of system resource file (STRING[19])
+AppParmHandle 0AEC  long  handle to hold application parameters
+DSErrCode     0AF0  word  last (or current) system error alert ID
+ResErrProc    0AF2  long  ptr to Resource Manager error procedure
+TEWdBreak     0AF6  long  ptr to default word break routine
+DlgFont       0AFA  word  current font number for dialogs and alerts
+LastTGLobal   0AFC  long  address of last global
+
+TrapAgain     0B00  long  use 4 bytes here for another trap
+[????]        0B04  word  
+ROMMapHndl    0B06  long  handle to ROM resource map
+PWMBuf1       0B0A  long  ptr to PWM buffer
+BootMask      0B0E  word  needed during boot
+WidthPtr      0B10  long  ptr to global width table
+AtalkHk1      0B14  long  ptr to Appletalk hook 1
+AtalkHk2      0B18  long  ptr to Appletalk hook 2
+[????]        0B1C  long  
+[????]        0B20  word  
+HWCfgFlags    0B22  word  hardware configuration flags (two names for this
+                          global)
+SCSIFlag      0B22  word  SCSI configuration word (bit 15=1 if SCSI installed)
+[????]        0B24  6     
+WidthTabHandle0B2A  long  handle to global width table
+[????]        0B2E  6     
+BtDskRfn      0B34  word  boot drive driver reference number
+BootTmp8      0B36  8   temporary space needed by StartBoot
+[????]        0B3E  byte  
+T1Arbitrate   0B3F  byte  holds $FF if Timer T1 up for grabs
+[????]        0B40  20    
+MenuDisable   0B54  long  resID and menuItem of last chosen menu item
+[????]        0B58  40    
+ 0B80  -   switched variables (128 bytes)
+RMGRHiVars    0B80  -     RMGR variables (32 bytes)
+[????]        0B80  14    
+RomMapInsert  0B9E  byte  flag: insert [resource] map to the ROM resources
+TmpResLoad    0B9F  byte  temp SetResLoad state for calls using ROMMapInsert
+IntlSpec      0BA0  long  international software installed if not -1
+[????]        0BA4  word  
+SysFontFam    0BA6  word  if nonzero, the font # for system font
+SysFontSize   0BA8  word  if nonzero, the system font size 
+MBarHeight    0BAA  word  pixel height of menu bar 
+[????]        0BAC  long  
+NewUnused     0BC0  word  formerly FlEvtMask
+LastFOND      0BC2  long  handle to last family record used
+[????]        0BC4  48    
+FractEnable   0BF4  byte  enables fractional widths if not zero
+[????]        0BF5  byte  
+[????]        0BF6  10  
+
+DrvQHdr     001812 
+
+rom         040000
+
+buffer      200000
+
+stack       1FFC00
+stack-64    1FFBC0
+
+screen      3FA700
+
+

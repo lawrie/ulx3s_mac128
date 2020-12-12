@@ -217,10 +217,10 @@ module mac128
   reg [7:0]   via_timer2_latch_low;
   reg         via_timer2_armed;
   reg         rtc_data = 0;
-  reg         scc_wreq = 0;
   reg [5:0]   vsync_cnt;
   reg         old_vSync;
 
+  wire        scc_wreq = 1;
   wire [7:0]  kbd_in_data;                                           // Keyboard input data
   wire        kbd_in_strobe;                                         // Keyboard input strobe
   wire        via_irq = (via_ifr & via_ier) != 0;
@@ -345,7 +345,7 @@ module mac128
     if (reset) begin
       diag16 <= 0;
     end else begin
-      if (last_rom_addr == 24'h418ce8) diag16 <= diag16 + 1;
+      if (last_rom_addr == 24'h4189fa) diag16 <= diag16 + 1;
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
