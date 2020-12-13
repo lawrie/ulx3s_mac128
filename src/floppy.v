@@ -61,6 +61,8 @@
 module floppy(
 	input clk8,
 	input _reset,
+	input cep,
+	input cen,
 	input ca0,				// PH0
 	input ca1,				// PH1
 	input ca2,				// PH2
@@ -346,7 +348,7 @@ module floppy(
 			driveRegs[`DRIVE_REG_TACH] <= 1'b0;
 			driveTachTimer <= 0;
 		end 
-		else begin
+		else if (cep) begin
 			if (driveTachTimer == driveTachPeriod) begin
 				driveTachTimer <= 0;
 				driveRegs[`DRIVE_REG_TACH] <= ~driveRegs[`DRIVE_REG_TACH];

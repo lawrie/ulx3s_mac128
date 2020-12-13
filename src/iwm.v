@@ -31,6 +31,8 @@
 
 module iwm(
 	input clk8,
+	input cep,
+        input cen,
 	input _reset,
 	input selectIWM,
 	input _cpuRW,
@@ -76,6 +78,8 @@ module iwm(
 	floppy floppyInt(
 		.clk8(clk8),
 		._reset(_reset),
+		.cep(cep),
+                .cen(cen),
 		.ca0(ca0),
 		.ca1(ca1),
 		.ca2(ca2),
@@ -96,6 +100,8 @@ module iwm(
 		.side(side));
 	floppy floppyExt(
 		.clk8(clk8),
+		.cep(cep),
+		.cen(cen),
 		._reset(_reset),
 		.ca0(ca0),
 		.ca1(ca1),

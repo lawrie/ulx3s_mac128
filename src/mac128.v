@@ -345,15 +345,18 @@ module mac128
     if (reset) begin
       diag16 <= 0;
     end else begin
-      if (last_rom_addr == 24'h4189fa) diag16 <= diag16 + 1;
+      if (last_rom_addr == 24'h4182A2) diag16 <= diag16 + 1;
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
 
-  // VIA timer should be 0.78336 MHz - this is close enough
+  // VIA timer should be 1/10 of the clock speed = 1.25MHz
   reg [4:0] clk_div;
   wire timer_strobe = (clk_div == 0);
-  always @(posedge clk_cpu) clk_div <= clk_div + 1; 
+  always @(posedge clk_cpu) begin
+    clk_div <= clk_div + 1; 
+    if (clk_div == 19) clk_div <= 0;
+  end
 
   // VIA register writes
   always @(posedge clk_cpu) begin
@@ -537,6 +540,8 @@ module mac128
   iwm iwm_i (
     .clk8(clk_cpu),
     ._reset(~reset),
+    .cep(cep),
+    .cen(cen),
     .selectIWM(iwm_cs),
     ._cpuRW(cpu_rw),
     ._cpuLDS(cpu_lds_n),
