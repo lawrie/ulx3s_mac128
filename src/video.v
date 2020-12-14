@@ -63,7 +63,7 @@ module video (
     else pixel_data <= {pixel_data[14:0], 1'b0};
   end
   
-  wire pixel = pixel_data[15];
+  wire pixel = ~pixel_data[15];
   wire [7:0] green = border ? 8'b0 : {8{pixel}};
   wire [7:0] red   = border ? 8'b0 : {8{pixel}};
   wire [7:0] blue  = border ? 8'b0 : {8{pixel}};

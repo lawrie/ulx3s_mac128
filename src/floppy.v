@@ -186,7 +186,7 @@ module floppy(
 			diskDataByteTimer <= 0;
 			readyToAdvanceHead <= 1;
 		end 
-		else begin			
+		else if (cep) begin			
 			// a timer governs when the next disk byte will become available
 			diskDataByteTimer <= diskDataByteTimer + 1'b1;
 			
