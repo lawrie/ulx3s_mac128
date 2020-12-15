@@ -18,7 +18,6 @@ from struct import unpack
 from time import sleep_ms
 import os
 import gc
-import ecp5
 
 class osd:
   def __init__(self):
@@ -29,17 +28,17 @@ class osd:
     self.exp_names = " KMGTE"
     self.mark = bytearray([32,16,42]) # space, right triangle, asterisk
     self.diskfile=False
-    self.data_buf=bytearray(554)
-    self.mdv_byte=bytearray(1)
-    self.mdv_phase=bytearray([1])
+    self.data_buf=bytearray(2048)
+    self.track2sector=bytearray(81*2)
+    self.init_track2sector()
     self.read_dir()
     self.spi_read_irq = bytearray([1,0xF1,0,0,0,0,0])
     self.spi_read_btn = bytearray([1,0xFB,0,0,0,0,0])
-    self.spi_read_blktyp = bytearray([1,0xD0,0,0,0,0,0])
+    self.spi_read_trackno = bytearray([1,0xD0,0,0,0,0,0])
     self.spi_result = bytearray(7)
     self.spi_enable_osd = bytearray([0,0xFE,0,0,0,1])
     self.spi_write_osd = bytearray([0,0xFD,0,0,0])
-    self.spi_send_mdv_bram = bytearray([0,0xD1,0,0,0])
+    self.spi_write_track = bytearray([0,0xD1,0,0,0])
     self.spi_channel = const(2)
     self.spi_freq = const(3000000)
     self.init_pinout_sd()
@@ -66,6 +65,14 @@ class osd:
     self.fb_selected = -1
 
   @micropython.viper
+  def init_track2sector(self): 
+    p16t2s=ptr16(addressof(self.track2sector))
+    offset=0
+    for i in range(0,81):
+      p16t2s[i]=offset
+      offset+=12-i//16
+
+  @micropython.viper
   def init_pinout_sd(self):
     self.gpio_cs   = const(17)
     self.gpio_sck  = const(16)
@@ -76,17 +83,25 @@ class osd:
   @micropython.viper
   def irq_handler(self, pin):
     p8result = ptr8(addressof(self.spi_result))
+    p16t2s = ptr16(addressof(self.track2sector))
     self.cs.on()
     self.spi.write_readinto(self.spi_read_irq, self.spi_result)
     self.cs.off()
     btn_irq = p8result[6]
-    if btn_irq&1: # microdrive 1 request
-      #self.cs.on()
-      #self.spi.write_readinto(self.spi_read_blktyp,self.spi_result)
-      #self.cs.off()
-      #blktyp=p8result[6]
+    if btn_irq&1: # drive 1 request
       if self.diskfile:
-        self.mdv_read()
+        self.cs.on()
+        self.spi.write_readinto(self.spi_read_trackno,self.spi_result)
+        self.cs.off()
+        track=p8result[6]
+        sectors=12-track//16
+        self.diskfile.seek(2048*p16t2s[track])
+        self.cs.on()
+        self.spi.write(self.spi_write_track)
+        for i in range(sectors):
+          self.diskfile.readinto(self.data_buf)
+          self.spi.write(self.data_buf)
+        self.cs.off()
     if btn_irq&0x80: # btn event IRQ flag
       self.cs.on()
       self.spi.write_readinto(self.spi_read_btn, self.spi_result)
@@ -172,9 +187,8 @@ class osd:
     self.show_dir_line(oldselected)
     self.show_dir_line(self.fb_cursor - self.fb_topitem)
     if filename:
-      if filename.endswith(".mdv") or filename.endswith(".MDV"):
+      if filename.endswith(".mac") or filename.endswith(".MAC"):
         self.diskfile = open(filename,"rb")
-        self.mdv_refill_buf()
         self.enable[0]=0
         self.osd_enable(0)
       if filename.endswith(".bit"):
@@ -183,15 +197,15 @@ class osd:
         self.enable[0]=0
         self.osd_enable(0)
         self.spi.deinit()
-        tap=ecp5.ecp5()
-        tap.prog_stream(open(filename,"rb"),blocksize=1024)
+        import ecp5
+        ecp5.prog_stream(open(filename,"rb"),blocksize=1024)
         if filename.endswith("_sd.bit"):
           os.umount("/sd")
           for i in bytearray([2,4,12,13,14,15]):
             p=Pin(i,Pin.IN)
             a=p.value()
             del p,a
-        result=tap.prog_close()
+        result=ecp5.prog_close()
         del tap
         gc.collect()
         #os.mount(SDCard(slot=3),"/sd") # BUG, won't work
@@ -373,88 +387,6 @@ class osd:
       if stat[0] & 0o170000 != 0o040000:
         self.direntries.append([fname,0,stat[6]]) # file
 
-  def mdv_skip_preamble(self,n:int)->int:
-    i=0
-    j=0
-    found=0
-    while j<n:
-      if self.diskfile.readinto(self.mdv_byte):
-        if self.mdv_byte[0]==0xFF:
-          self.diskfile.readinto(self.mdv_byte)
-          if self.mdv_byte[0]==0xFF and i>=10:
-            found=1
-            i+=2
-            break
-          else:
-            i=0
-        else:
-          if self.mdv_byte[0]==0:
-            i+=1
-          else:
-            i=0
-        j+=1
-      else: # EOF, make it circular
-        self.diskfile.seek(0)
-        print("MDV: wraparound",self.data_buf[2:12].decode("utf-8"))
-    if found:
-      return i
-    return 0
-  
-  def mdv_refill_buf(self):
-    if self.mdv_skip_preamble(1000):
-      self.diskfile.readinto(self.data_buf)
-      # skip block if header doesn't start with 0xFF
-      #i=0
-      #while self.data_buf[0]!=0xFF and i<254:
-      #  self.mdv_skip_preamble(1000)
-      #  self.diskfile.readinto(self.data_buf)
-      #  i+=1
-      #print(self.data_buf[1],self.data_buf[2:12]) # block number, volume name
-      #print(self.data_buf[0:16],self.data_buf[28:32],self.data_buf[40:44]) # block number, volume name
-    else:
-      print("MDV: preamble not found")
-
-  @micropython.viper
-  def mdv_checksum(self,a:int,b:int)->int:
-    p8b=ptr8(addressof(self.data_buf))
-    c=0xF0F
-    i=a
-    while i<b:
-      c+=p8b[i]
-      i+=1
-    return c&0xFFFF
-
-  def mdv_read(self):
-    if self.mdv_phase[0]:
-      self.ctrl(8) # R_cpu_control[3]=1
-      self.cs.on()
-      self.spi.write(self.spi_send_mdv_bram)
-      self.spi.write(self.data_buf[0:16])
-      self.cs.off()
-      self.ctrl(0)
-    else:
-      self.ctrl(8)
-      self.cs.on()
-      self.spi.write(self.spi_send_mdv_bram)
-      self.spi.write(self.data_buf[28:32])
-      self.spi.write(self.data_buf[40:554])
-      self.cs.off()
-      self.ctrl(0)
-      self.led.on()
-      self.mdv_refill_buf()
-      # fix checksum in broken MDV images
-      #c=self.mdv_checksum(0,14)
-      #self.data_buf[14]=c
-      #self.data_buf[15]=c>>8
-      c=self.mdv_checksum(28,30)
-      self.data_buf[30]=c
-      self.data_buf[31]=c>>8
-      #c=self.mdv_checksum(40,552)
-      #self.data_buf[552]=c
-      #self.data_buf[553]=c>>8
-      self.led.off()
-    self.mdv_phase[0]^=1
-
   # NOTE: this can be used for debugging
   #def osd(self, a):
   #  if len(a) > 0:
@@ -503,9 +435,10 @@ def peek(addr,length=1):
 def poke(addr,data):
   run.poke(addr,data)
 
-bitstream="/sd/ql/bitstreams/ulx3s_12f_ql.bit"
+bitstream="/sd/ql/bitstreams/ulx3s_85f_mac128.bit"
 try:
   os.mount(SDCard(slot=3),"/sd")
+  import ecp5
   ecp5.prog(bitstream)
 except:
   print(bitstream+" file not found")
