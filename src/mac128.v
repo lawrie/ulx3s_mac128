@@ -538,7 +538,7 @@ module mac128
   // IWM
   // ===============================================================
   iwm iwm_i (
-    .clk8(clk_cpu),
+    .clk(clk_cpu),
     ._reset(~reset),
     .cep(cep),
     .cen(cen),
