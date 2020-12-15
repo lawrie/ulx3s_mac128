@@ -65,7 +65,7 @@ class osd:
     self.fb_selected = -1
 
   @micropython.viper
-  def init_track2sector(self): 
+  def init_track2sector(self):
     p16t2s=ptr16(addressof(self.track2sector))
     offset=0
     for i in range(0,81):
