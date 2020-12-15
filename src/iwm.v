@@ -210,21 +210,17 @@ module iwm(
 	
 	// read IWM state
 	always @(*) begin
-		dataOutLo = 8'hEF;
-		
-		if (_cpuRW == 1'b1 && selectIWM == 1'b1 && _cpuLDS == 1'b0) begin
-			// reading any IWM address returns state as selected by Q7 and Q6
-			case ({q7Next,q6Next}) 
-				2'b00: // data-in register (from disk drive) - MSB is 1 when data is valid
-					dataOutLo <= readDataLatch;
-				2'b01: // IWM status register - read only
-					dataOutLo <= { (selectExternalDriveNext ? senseExt : senseInt), 1'b0, diskEnableExt & diskEnableInt, iwmMode }; 
-				2'b10: // handshake - read only
-					dataOutLo <= { _iwmBusy, _writeUnderrun, 6'b000000 };
-				2'b11: // IWM mode register when not enabled (write-only), or (write?) data register when enabled
-					dataOutLo <= 0;
-			endcase
-		end	
+		// reading any IWM address returns state as selected by Q7 and Q6
+		case ({q7Next,q6Next}) 
+			2'b00: // data-in register (from disk drive) - MSB is 1 when data is valid
+				dataOutLo <= readDataLatch;
+			2'b01: // IWM status register - read only
+				dataOutLo <= { (selectExternalDriveNext ? senseExt : senseInt), 1'b0, diskEnableExt & diskEnableInt, iwmMode }; 
+			2'b10: // handshake - read only
+				dataOutLo <= { _iwmBusy, _writeUnderrun, 6'b000000 };
+			2'b11: // IWM mode register when not enabled (write-only), or (write?) data register when enabled
+				dataOutLo <= 0;
+		endcase
 	end
 	
 	// write IWM state
@@ -258,7 +254,7 @@ module iwm(
 			readLatchClearTimer <= 0;
 			iwmReadPrev <= 0;
 		end 
-		else begin
+		else if (cep) begin
 			// a countdown timer governs how long after a data latch read before the latch is cleared
 			if (readLatchClearTimer != 0) begin
 				readLatchClearTimer <= readLatchClearTimer - 1'b1;
@@ -276,6 +272,7 @@ module iwm(
 			end
 			else if (readLatchClearTimer == 1'b1) begin
 				readDataLatch <= 0;
+				readLatchClearTimer <= 0;
 			end
 			
 			iwmReadPrev <= iwmRead;
