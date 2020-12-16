@@ -707,7 +707,7 @@ module mac128
   );
 
   wire disk_ram_write = spi_ram_wr && spi_ram_addr[31:24] == 8'hD1;
-  ram8 #(.MEM_INIT_FILE("../roms/disk608.mem")) ram_disk (
+  ram8 ram_disk (
     .clk(clk_cpu),
     .we(disk_ram_write),
     .addr(disk_ram_write ? spi_ram_addr : extra_rom_read_addr),
