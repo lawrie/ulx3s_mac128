@@ -195,6 +195,7 @@ module mac128
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
   reg [23:0]  last_rom_addr;
   wire        halt_n = ~R_cpu_control[2] && ~btn[1]; 
+  reg         floppy_req = 0;
   // Chip select registers
   reg         via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
   
@@ -281,6 +282,7 @@ module mac128
   wire [7:0]  extra_rom_read_data; 
   wire [6:0]  track;
   wire        side;
+  reg         stepping = 1;
 
   // ===============================================================
   // Address decoding
@@ -341,11 +343,14 @@ module mac128
   assign audio_r = audio_l;
 
   // Diagnostics
+  reg [7:0] first_disk_byte;
   always @(posedge clk_cpu) begin
     if (reset) begin
       diag16 <= 0;
     end else begin
-      if (last_rom_addr == 24'h4182A2) diag16 <= diag16 + 1;
+      if (extra_rom_read_addr[8:0] == 0 && side == 0 && track == 1) first_disk_byte <= extra_rom_read_data;
+      //if (last_rom_addr == 24'h4182A2) diag16 <= diag16 + 1;
+      diag16 <= {first_disk_byte, side, track};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -555,8 +560,26 @@ module mac128
     .extraRomReadAck(extra_rom_read_ack),
     .extraRomReadData(extra_rom_read_data),
     .track(track),
-    .side(side)
+    .side(side),
+    .stepping(stepping)
   );
+
+   
+  reg [6:0] old_track;
+  always @(posedge clk_cpu) begin
+    if (reset) begin
+      stepping <= 1;
+      old_track <= 127; // Force read of track 0
+      floppy_req <= 0;
+    end else begin
+      old_track <= track;
+      floppy_req <= 0;
+      if (track != old_track) begin
+        floppy_req <= 1;
+        //stepping <= 0;
+      end
+    end
+  end
 
   // ===============================================================
   // CPU
@@ -655,7 +678,6 @@ module mac128
   wire  [7:0] spi_floppy_do = 0;
   wire  [7:0] spi_ram_di = spi_ram_addr[31:24]==8'hD1 ? spi_floppy_do : (spi_ram_addr[0] ? ram_dout[7:0] : ram_dout[15:8]);
   wire  [7:0] spi_ram_do;
-  reg         floppy_req = 0;
 
   assign sd_d[0] = 1'bz;
   assign sd_d[3] = 1'bz; // FPGA pin pullup sets SD card inactive at SPI bus
@@ -676,7 +698,7 @@ module mac128
     .btn(R_btn_joy),
     .irq(spi_irq),
     .mdv_req(floppy_req),
-    .mdv_req_type(8'h01),
+    .mdv_req_type(track),
     .wr(spi_ram_wr),
     .rd(spi_ram_rd),
     .addr(spi_ram_addr),
