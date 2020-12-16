@@ -3,7 +3,7 @@
    Mapped to $DFE1FF - $DFFFFF
 	
 	The 16 IWM one-bit registers are {8'hDF, 8'b111xxxx1, 8'hFF}:
-		0	$0		ca0L		CA0 off (0)
+		0	$0	ca0L		CA0 off (0)
 		1	$200	ca0H		CA0 on (1)
 		2	$400	ca1L		CA1 off (0)
 		3	$600	ca1H		CA1 on (1)
@@ -11,7 +11,7 @@
 		5	$A00	ca2H		CA2 on (1)
 		6	$C00	ph3L		LSTRB off (low)
 		7	$E00	ph3H		LSTRB on (high)
-		8	$1000	mtrOff	ENABLE disk enable off
+		8	$1000	mtrOff		ENABLE disk enable off
 		9	$1200	mtrOn		ENABLE disk enable on
 		10	$1400	intDrive	SELECT select internal drive
 		11	$1600	extDrive	SELECT select external drive
@@ -30,7 +30,7 @@
 */		
 
 module iwm(
-	input clk8,
+	input clk,
 	input cep,
         input cen,
 	input _reset,
@@ -47,6 +47,7 @@ module iwm(
 	output [21:0] extraRomReadAddr,
 	input extraRomReadAck,
 	input [7:0] extraRomReadData,
+
 	output [6:0] track,
 	output side
 );
@@ -76,7 +77,7 @@ module iwm(
 	wire senseExt = readDataExt[7]; // bit 7 doubles as the sense line here
 	
 	floppy floppyInt(
-		.clk8(clk8),
+		.clk(clk),
 		._reset(_reset),
 		.cep(cep),
                 .cen(cen),
@@ -98,8 +99,9 @@ module iwm(
 		.extraRomReadData(extraRomReadData),
 		.track(track),
 		.side(side));
+
 	floppy floppyExt(
-		.clk8(clk8),
+		.clk(clk),
 		.cep(cep),
 		.cen(cen),
 		._reset(_reset),
@@ -147,43 +149,41 @@ module iwm(
 
 	// any read/write access to IWM bit registers will change their values
 	always @(*) begin
-		ca0Next <= ca0;
-		ca1Next <= ca1;
-		ca2Next <= ca2;
-		lstrbNext <= lstrb;
-		diskEnableExtNext <= diskEnableExt;
-		diskEnableIntNext <= diskEnableInt;
-		selectExternalDriveNext <= selectExternalDrive;
-		q6Next <= q6;
-		q7Next <= q7;
+		ca0Next = ca0;
+		ca1Next = ca1;
+		ca2Next = ca2;
+		lstrbNext = lstrb;
+		diskEnableExtNext = diskEnableExt;
+		diskEnableIntNext = diskEnableInt;
+		selectExternalDriveNext = selectExternalDrive;
+		q6Next = q6;
+		q7Next = q7;
 		
 		if (selectIWM == 1'b1 && _cpuLDS == 1'b0) begin
 			case (cpuAddrRegHi[3:1])
 				3'h0: // ca0
-					ca0Next <= cpuAddrRegHi[0];
+					ca0Next = cpuAddrRegHi[0];
 				3'h1: // ca1
-					ca1Next <= cpuAddrRegHi[0];
+					ca1Next = cpuAddrRegHi[0];
 				3'h2: // ca2
-					ca2Next <= cpuAddrRegHi[0];
+					ca2Next = cpuAddrRegHi[0];
 				3'h3: // lstrb
-					lstrbNext <= cpuAddrRegHi[0];
+					lstrbNext = cpuAddrRegHi[0];
 				3'h4: // disk enable
-					if (selectExternalDrive)
-						diskEnableExtNext <= cpuAddrRegHi[0];
-					else
-						diskEnableIntNext <= cpuAddrRegHi[0];
+					if (selectExternalDrive) diskEnableExtNext = cpuAddrRegHi[0];
+					else diskEnableIntNext = cpuAddrRegHi[0];
 				3'h5: // external drive
-					selectExternalDriveNext <= cpuAddrRegHi[0];
+					selectExternalDriveNext = cpuAddrRegHi[0];
 				3'h6: // Q6 
-					q6Next <= cpuAddrRegHi[0];
+					q6Next = cpuAddrRegHi[0];
 				3'h7: // Q7 
-					q7Next <= cpuAddrRegHi[0];
+					q7Next = cpuAddrRegHi[0];
 			endcase
 		end
 	end
 	
 	// update IWM bit registers
-	always @(posedge clk8 or negedge _reset) begin
+	always @(posedge clk or negedge _reset) begin
 		if (_reset == 1'b0) begin
 			ca0 <= 0;
 			ca1 <= 0;
@@ -194,8 +194,7 @@ module iwm(
 			selectExternalDrive <= 0;
 			q6 <= 0;
 			q7 <= 0;
-		end
-		else begin
+		end else begin
 			ca0 <= ca0Next;
 			ca1 <= ca1Next;
 			ca2 <= ca2Next;
@@ -210,38 +209,31 @@ module iwm(
 	
 	// read IWM state
 	always @(*) begin
-		dataOutLo = 8'hEF;
-		
-		if (_cpuRW == 1'b1 && selectIWM == 1'b1 && _cpuLDS == 1'b0) begin
-			// reading any IWM address returns state as selected by Q7 and Q6
-			case ({q7Next,q6Next}) 
-				2'b00: // data-in register (from disk drive) - MSB is 1 when data is valid
-					dataOutLo <= readDataLatch;
-				2'b01: // IWM status register - read only
-					dataOutLo <= { (selectExternalDriveNext ? senseExt : senseInt), 1'b0, diskEnableExt & diskEnableInt, iwmMode }; 
-				2'b10: // handshake - read only
-					dataOutLo <= { _iwmBusy, _writeUnderrun, 6'b000000 };
-				2'b11: // IWM mode register when not enabled (write-only), or (write?) data register when enabled
-					dataOutLo <= 0;
-			endcase
-		end	
+		// reading any IWM address returns state as selected by Q7 and Q6
+		case ({q7Next,q6Next}) 
+			2'b00: // data-in register (from disk drive) - MSB is 1 when data is valid
+				dataOutLo <= readDataLatch;
+			2'b01: // IWM status register - read only
+				dataOutLo <= { (selectExternalDriveNext ? senseExt : senseInt), 1'b0, diskEnableExt & diskEnableInt, iwmMode }; 
+			2'b10: // handshake - read only
+				dataOutLo <= { _iwmBusy, _writeUnderrun, 6'b000000 };
+			2'b11: // IWM mode register when not enabled (write-only), or (write?) data register when enabled
+				dataOutLo <= 0;
+		endcase
 	end
 	
 	// write IWM state
-	always @(posedge clk8 or negedge _reset) begin
+	always @(posedge clk or negedge _reset) begin
 		if (_reset == 1'b0) begin		
 			iwmMode <= 0;
 			writeData <= 0;
-		end
-		else begin
+		end else begin
 			if (_cpuRW == 0 && selectIWM == 1'b1 && _cpuLDS == 1'b0) begin
 				// writing to any IWM address modifies state as selected by Q7 and Q6
 				case ({q7Next,q6Next})
 					2'b11: begin
-						if (diskEnableExt | diskEnableInt)
-							writeData <= dataInLo;
-						else
-							iwmMode <= dataInLo[4:0];
+						if (diskEnableExt | diskEnableInt) writeData <= dataInLo;
+						else iwmMode <= dataInLo[4:0];
 					end
 				endcase
 			end
@@ -252,17 +244,14 @@ module iwm(
 	wire iwmRead = (_cpuRW == 1'b1 && selectIWM == 1'b1 && _cpuLDS == 1'b0);
 	reg iwmReadPrev;
 	reg [3:0] readLatchClearTimer; 
-	always @(posedge clk8 or negedge _reset) begin
+	always @(posedge clk or negedge _reset) begin
 		if (_reset == 1'b0) begin	
 			readDataLatch <= 0;
 			readLatchClearTimer <= 0;
 			iwmReadPrev <= 0;
-		end 
-		else begin
+		end else if (cep) begin
 			// a countdown timer governs how long after a data latch read before the latch is cleared
-			if (readLatchClearTimer != 0) begin
-				readLatchClearTimer <= readLatchClearTimer - 1'b1;
-			end
+			if (readLatchClearTimer != 0) readLatchClearTimer <= readLatchClearTimer - 1'b1;
 
 			// the conclusion of a valid CPU read from the IWM will start the timer to clear the latch
 			if (iwmReadPrev && !iwmRead && readDataLatch[7]) begin
@@ -273,13 +262,15 @@ module iwm(
 			// NOTE: the real IWM must self-synchronize with the incoming data to determine when to latch it
 			if (newByteReady) begin
 				readDataLatch <= readData;
-			end
-			else if (readLatchClearTimer == 1'b1) begin
+				readLatchClearTimer <= 0;
+			end else if (readLatchClearTimer == 4'b1) begin
 				readDataLatch <= 0;
 			end
 			
 			iwmReadPrev <= iwmRead;
 		end
 	end
+
 	assign advanceDriveHead = readLatchClearTimer == 1'b1; // prevents overrun when debugging, does not exist on a real Mac!
+
 endmodule
