@@ -49,7 +49,8 @@ module iwm(
 	input [7:0] extraRomReadData,
 
 	output [6:0] track,
-	output side
+	output side,
+	input stepping
 );
 
 	wire [7:0] dataInLo = dataIn[7:0];
@@ -98,7 +99,8 @@ module iwm(
 		.extraRomReadAck(extraRomReadAck),
 		.extraRomReadData(extraRomReadData),
 		.track(track),
-		.side(side));
+		.side(side),
+		.stepping(stepping));
 
 	floppy floppyExt(
 		.clk(clk),
@@ -117,7 +119,8 @@ module iwm(
 		.advanceDriveHead(advanceDriveHead),
 		.newByteReady(newByteReadyExt),
 		.insertDisk(insertDisk[1]),
-		.diskInDrive(diskInDrive[1]));
+		.diskInDrive(diskInDrive[1]),
+		.stepping(stepping));
 	
 	wire [7:0] readData = selectExternalDrive ? readDataExt : readDataInt;
 	wire newByteReady = selectExternalDrive ? newByteReadyExt : newByteReadyInt;
