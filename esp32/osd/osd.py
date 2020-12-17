@@ -90,6 +90,7 @@ class osd:
     btn_irq = p8result[6]
     if btn_irq&1: # drive 1 request
       if self.diskfile:
+        self.ctrl(4) # stop cpu
         self.cs.on()
         self.spi.write_readinto(self.spi_read_trackno,self.spi_result)
         self.cs.off()
@@ -102,6 +103,7 @@ class osd:
           self.diskfile.readinto(self.data_buf)
           self.spi.write(self.data_buf)
         self.cs.off()
+        self.ctrl(0) # restart cpu
     if btn_irq&0x80: # btn event IRQ flag
       self.cs.on()
       self.spi.write_readinto(self.spi_read_btn, self.spi_result)

@@ -82,7 +82,8 @@ module floppy(
 	input extraRomReadAck,
 	input [7:0] extraRomReadData,
 	output [6:0] track,
-	output side
+	output side,
+	input stepping
 );
 
 	reg [15:0] driveRegs;
@@ -108,7 +109,7 @@ module floppy(
 		~(driveTrack == 7'h00), // TK0: track 0 indicator
 		driveRegs[`DRIVE_REG_MOTORON], // motor on
 		1'b0, // WRTPRT = locked
-		1'b1, // STEP = complete
+		stepping, // STEP, 1 = complete
 		driveRegs[`DRIVE_REG_CSTIN], // disk in drive
 		driveRegs[`DRIVE_REG_DIRTN] // step direction
 	};
@@ -158,7 +159,6 @@ module floppy(
 	reg [15:0] diskImageHeadOffset;
 	
 	assign extraRomReadAddr = 
-		diskImageTrackBase + 
 		((driveSide && doubleSidedDisk) ? diskImageTrackSideLen : 0) +
 		diskImageHeadOffset;
 
