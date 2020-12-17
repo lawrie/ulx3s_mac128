@@ -27,10 +27,10 @@ class osd:
     self.exp_names = " KMGTE"
     self.mark = bytearray([32,16,42]) # space, right triangle, asterisk
     self.diskfile=False
-    self.conv_dataIn=bytearray(524) # filled with 0
-    # trick to readinto at offset 12
-    self.conv_dataInrd=memoryview(self.conv_dataIn)
-    self.conv_dataInrd=memoryview(self.conv_dataInrd[12:524])
+    self.imgtype=bytearray(1) # 0:.mac/.bin 1638400 bytes, 1:.dsk 819200 bytes
+    self.conv_dataIn524=bytearray(524)
+    datainmv=memoryview(self.conv_dataIn524)
+    self.conv_dataIn512=memoryview(datainmv[12:524])
     self.conv_nibsOut=bytearray(1024)
     dsk2mac.init_nibsOut(self.conv_nibsOut)
     self.track2sector=bytearray(81*2)
@@ -85,31 +85,42 @@ class osd:
     self.gpio_led  = const(5)
 
   @micropython.viper
-  def irq_handler(self, pin):
+  def update_track(self):
     p8result = ptr8(addressof(self.spi_result))
     p16t2s = ptr16(addressof(self.track2sector))
+    p8it = ptr8(addressof(self.imgtype))
+    # ask FPGA for current track number
+    self.cs.on()
+    self.spi.write_readinto(self.spi_read_trackno,self.spi_result)
+    self.cs.off()
+    track=p8result[6]
+    sectors=12-track//16
+    self.diskfile.seek((2-p8it[0])*1024*p16t2s[track])
+    self.ctrl(4) # stop cpu
+    # upload data
+    self.cs.on()
+    self.spi.write(self.spi_write_track)
+    for side in range(2):
+      for sector in range(sectors):
+        if p8it[0]:
+          self.diskfile.readinto(self.conv_dataIn512)
+          dsk2mac.convert_sector(self.conv_dataIn524,self.conv_nibsOut,track,side,sector)
+        else:
+          self.diskfile.readinto(self.conv_nibsOut)
+        self.spi.write(self.conv_nibsOut)
+    self.cs.off()
+    self.ctrl(0) # resume cpu
+
+  @micropython.viper
+  def irq_handler(self, pin):
+    p8result = ptr8(addressof(self.spi_result))
     self.cs.on()
     self.spi.write_readinto(self.spi_read_irq, self.spi_result)
     self.cs.off()
     btn_irq = p8result[6]
     if btn_irq&1: # drive 1 request
       if self.diskfile:
-        self.ctrl(4) # stop cpu
-        self.cs.on()
-        self.spi.write_readinto(self.spi_read_trackno,self.spi_result)
-        self.cs.off()
-        track=p8result[6]
-        sectors=12-track//16
-        self.diskfile.seek(1024*p16t2s[track])
-        self.cs.on()
-        self.spi.write(self.spi_write_track)
-        for side in range(2):
-          for sector in range(sectors):
-            self.diskfile.readinto(self.conv_dataInrd)
-            dsk2mac.convert_sector(self.conv_dataIn,self.conv_nibsOut,track,side,sector)
-            self.spi.write(self.conv_nibsOut)
-        self.cs.off()
-        self.ctrl(0) # restart cpu
+        self.update_track()
     if btn_irq&0x80: # btn event IRQ flag
       self.cs.on()
       self.spi.write_readinto(self.spi_read_btn, self.spi_result)
@@ -195,8 +206,15 @@ class osd:
     self.show_dir_line(oldselected)
     self.show_dir_line(self.fb_cursor - self.fb_topitem)
     if filename:
-      if filename.endswith(".dsk") or filename.endswith(".DSK"):
+      if filename.endswith(".mac") or filename.endswith(".MAC") or filename.endswith(".dsk") or filename.endswith(".DSK"):
         self.diskfile = open(filename,"rb")
+        self.imgtype[0]=0
+        if filename.endswith(".dsk") or filename.endswith(".DSK"):
+          self.imgtype[0]=1
+          # first 12 bytes of dataIn524 must be constant 0 for .dsk format
+          for i in range(12):
+            self.conf_dataIn524[i]=0
+        self.update_track()
         self.enable[0]=0
         self.osd_enable(0)
       if filename.endswith(".bit"):
@@ -443,7 +461,8 @@ def peek(addr,length=1):
 def poke(addr,data):
   run.poke(addr,data)
 
-bitstream="/sd/mac/bitstreams/ulx3s_v20_85f_mac128.bit"
+#bitstream="/sd/mac/bitstreams/ulx3s_v20_85f_mac128.bit"
+bitstream="/xyz.bit"
 try:
   os.mount(SDCard(slot=3),"/sd")
   import ecp5
