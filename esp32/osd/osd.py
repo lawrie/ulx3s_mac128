@@ -16,8 +16,7 @@ from micropython import const, alloc_emergency_exception_buf
 from uctypes import addressof
 from struct import unpack
 from time import sleep_ms
-import os
-import gc
+import os,gc,dsk2mac
 
 class osd:
   def __init__(self):
@@ -28,7 +27,12 @@ class osd:
     self.exp_names = " KMGTE"
     self.mark = bytearray([32,16,42]) # space, right triangle, asterisk
     self.diskfile=False
-    self.data_buf=bytearray(2048)
+    self.conv_dataIn=bytearray(524) # filled with 0
+    # trick to readinto at offset 12
+    self.conv_dataInrd=memoryview(self.conv_dataIn)
+    self.conv_dataInrd=memoryview(self.conv_dataInrd[12:524])
+    self.conv_nibsOut=bytearray(1024)
+    dsk2mac.init_nibsOut(self.conv_nibsOut)
     self.track2sector=bytearray(81*2)
     self.init_track2sector()
     self.read_dir()
@@ -96,12 +100,14 @@ class osd:
         self.cs.off()
         track=p8result[6]
         sectors=12-track//16
-        self.diskfile.seek(2048*p16t2s[track])
+        self.diskfile.seek(1024*p16t2s[track])
         self.cs.on()
         self.spi.write(self.spi_write_track)
-        for i in range(sectors):
-          self.diskfile.readinto(self.data_buf)
-          self.spi.write(self.data_buf)
+        for side in range(2):
+          for sector in range(sectors):
+            self.diskfile.readinto(self.conv_dataInrd)
+            dsk2mac.convert_sector(self.conv_dataIn,self.conv_nibsOut,track,side,sector)
+            self.spi.write(self.conv_nibsOut)
         self.cs.off()
         self.ctrl(0) # restart cpu
     if btn_irq&0x80: # btn event IRQ flag
@@ -189,7 +195,7 @@ class osd:
     self.show_dir_line(oldselected)
     self.show_dir_line(self.fb_cursor - self.fb_topitem)
     if filename:
-      if filename.endswith(".mac") or filename.endswith(".MAC"):
+      if filename.endswith(".dsk") or filename.endswith(".DSK"):
         self.diskfile = open(filename,"rb")
         self.enable[0]=0
         self.osd_enable(0)
@@ -437,7 +443,7 @@ def peek(addr,length=1):
 def poke(addr,data):
   run.poke(addr,data)
 
-bitstream="/sd/ql/bitstreams/ulx3s_85f_mac128.bit"
+bitstream="/sd/mac/bitstreams/ulx3s_v20_85f_mac128.bit"
 try:
   os.mount(SDCard(slot=3),"/sd")
   import ecp5
