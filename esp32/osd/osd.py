@@ -89,8 +89,8 @@ class osd:
     p8result = ptr8(addressof(self.spi_result))
     p16t2s = ptr16(addressof(self.track2sector))
     p8it = ptr8(addressof(self.imgtype))
-    self.ctrl(4) # stop cpu
     # ask FPGA for current track number
+    self.ctrl(4) # stop cpu
     self.cs.on()
     self.spi.write_readinto(self.spi_read_trackno,self.spi_result)
     self.cs.off()
@@ -108,6 +108,9 @@ class osd:
         else:
           self.diskfile.readinto(self.conv_nibsOut)
         self.spi.write(self.conv_nibsOut)
+      #if sectors<12:
+      #  for sector in range(sectors,12):
+      #    self.spi.write(self.conv_nibsOut)
     self.cs.off()
     self.ctrl(0) # resume cpu
 
