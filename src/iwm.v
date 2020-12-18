@@ -1,3 +1,4 @@
+`default_nettype none
 /* IWM 
 
    Mapped to $DFE1FF - $DFFFFF
@@ -60,7 +61,7 @@ module iwm(
 	// IWM state
 	reg ca0, ca1, ca2, lstrb, selectExternalDrive, q6, q7;
 	reg ca0Next, ca1Next, ca2Next, lstrbNext, selectExternalDriveNext, q6Next, q7Next;
-	wire advanceDriveHead; // prevents overrun when debugging, does not exit on a real Mac!
+	reg advanceDriveHead; // prevents overrun when debugging, does not exit on a real Mac!
 	reg [7:0] writeData;
 	reg [7:0] readDataLatch;
 	wire _iwmBusy, _writeUnderrun;
@@ -246,34 +247,17 @@ module iwm(
 	// Manage incoming bytes from the disk drive
 	wire iwmRead = (_cpuRW == 1'b1 && selectIWM == 1'b1 && _cpuLDS == 1'b0);
 	reg iwmReadPrev;
-	reg [3:0] readLatchClearTimer; 
 	always @(posedge clk or negedge _reset) begin
 		if (_reset == 1'b0) begin	
 			readDataLatch <= 0;
-			readLatchClearTimer <= 0;
 			iwmReadPrev <= 0;
-		end else if (cep) begin
-			// a countdown timer governs how long after a data latch read before the latch is cleared
-			if (readLatchClearTimer != 0) readLatchClearTimer <= readLatchClearTimer - 1'b1;
-
-			// the conclusion of a valid CPU read from the IWM will start the timer to clear the latch
-			if (iwmReadPrev && !iwmRead && readDataLatch[7]) begin
-				readLatchClearTimer <= 4'hD; // clear latch 14 clocks after the conclusion of a valid read
-			end
-			
+		end else begin
+			advanceDriveHead <= (iwmReadPrev && !iwmRead);
 			// when the drive indicates that a new byte is ready, latch it
-			// NOTE: the real IWM must self-synchronize with the incoming data to determine when to latch it
-			if (newByteReady) begin
-				readDataLatch <= readData;
-				readLatchClearTimer <= 0;
-			end else if (readLatchClearTimer == 4'b1) begin
-				readDataLatch <= 0;
-			end
-			
+			if (newByteReady) readDataLatch <= readData;
+
 			iwmReadPrev <= iwmRead;
 		end
 	end
-
-	assign advanceDriveHead = readLatchClearTimer == 1'b1; // prevents overrun when debugging, does not exist on a real Mac!
 
 endmodule

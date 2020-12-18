@@ -1,3 +1,4 @@
+`default_nettype none
 /* Synchronous 8-bit replica of 3.5 inch floppy disk drive.
 
 	Differences from the true floppy interace at the Mac's DB-19 port:
@@ -89,7 +90,7 @@ module floppy(
 	reg [15:0] driveRegs;
 	reg [6:0] driveTrack;
 	reg driveSide;
-	reg [7:0] diskDataIn; 			// incoming byte from the floppy disk
+	wire [7:0] diskDataIn = extraRomReadData; 	// incoming byte from the floppy disk
 	
 	assign track = driveTrack;
 	assign side = driveSide;
@@ -163,50 +164,23 @@ module floppy(
 		diskImageHeadOffset;
 
 	wire [3:0] driveReadAddr = {ca2,ca1,ca0,SEL};
-	
-	// a byte is read or written every 128 clocks (2 us per bit * 8 bits = 16 us, @ 8 MHz = 128 clocks)
-	// The CPU must poll for data at least this often, or else an overrun will occur.
-	reg [6:0] diskDataByteTimer; 
-	reg [7:0] diskImageData;	
-	reg readyToAdvanceHead;
+        reg addressSet;	
 	always @(posedge clk or negedge _reset) begin
 		if (_reset == 1'b0) begin		
 			diskImageHeadOffset <= 1'b0;
 			driveSide <= 0;
-			diskImageData <= 8'h00;
-			diskDataIn <= 8'hFF;
-			diskDataByteTimer <= 0;
-			readyToAdvanceHead <= 1;
-		end else if (cep) begin			
-			// a timer governs when the next disk byte will become available
-			diskDataByteTimer <= diskDataByteTimer + 1'b1;
-			
-			// at time 0, latch a new byte and advance the drive head
-			if (diskDataByteTimer == 0 && readyToAdvanceHead && diskImageData != 0) begin
-				diskDataIn <= useDiskImage ? diskImageData : 8'hFF;
-				newByteReady <= 1'b1;
+                        newByteReady <= 1'b0;
+			addressSet <= 1;
+		end else begin			
+			addressSet <= 0;
+			if (advanceDriveHead) begin
+				addressSet <= 1'b1;
 				
 				if (diskImageHeadOffset + 1'b1 >= diskImageTrackSideLen) diskImageHeadOffset <= 0;
 				else diskImageHeadOffset <= diskImageHeadOffset + 1'b1;
-					
-				// clear diskImageData after it's used, so we can tell when we get a new one from the disk	
-				diskImageData <= 0;
-				
-				// for debugging, don't advance the head until the IWM says it's ready
-				readyToAdvanceHead <= 1'b1; // TEMP: treat IWM as always ready
-			end else begin
-				newByteReady <= 1'b0;
-				
-				if (extraRomReadAck) begin
-					// whenever ACK is received, store the data from the current diskImageAddr 
-					diskImageData <= extraRomReadData;
-				end
-				
-				if (advanceDriveHead) begin
-					readyToAdvanceHead <= 1'b1;
-				end
 			end
-			
+		
+			newByteReady <= addressSet;	
 			// switch drive sides if DRIVE_REG_RDDATA0 or DRIVE_REG_RDDATA1 are read
 			// TODO: we don't know if this is a true read, since we don't know if IWM is selected or 
 			// could be bad if we use this test to flush a cache of encoded disk data
