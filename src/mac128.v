@@ -275,7 +275,7 @@ module mac128
   // ===============================================================
   wire        disk_sel = via_a_data_out[5];
   wire [15:0] iwm_dout;
-  wire [1:0]  insert_disk = sw[0];
+  reg [1:0]   insert_disk;
   wire [1:0]  disk_in_drive;
   wire [21:0] extra_rom_read_addr;
   wire        extra_rom_read_ack = 1;
@@ -343,14 +343,12 @@ module mac128
   assign audio_r = audio_l;
 
   // Diagnostics
-  reg [7:0] first_disk_byte;
   always @(posedge clk_cpu) begin
     if (reset) begin
       diag16 <= 0;
     end else begin
-      if (extra_rom_read_addr[8:0] == 0 && side == 0 && track == 1) first_disk_byte <= extra_rom_read_data;
       //if (last_rom_addr == 24'h4182A2) diag16 <= diag16 + 1;
-      diag16 <= {first_disk_byte, side, track};
+      diag16 <= {side, track};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -568,15 +566,12 @@ module mac128
   reg [6:0] old_track;
   always @(posedge clk_cpu) begin
     if (reset) begin
-      stepping <= 1;
-      old_track <= 127; // Force read of track 0
       floppy_req <= 0;
     end else begin
       old_track <= track;
       floppy_req <= 0;
       if (track != old_track) begin
         floppy_req <= 1;
-        //stepping <= 0;
       end
     end
   end
@@ -721,23 +716,24 @@ module mac128
   reg [7:0] R_spi_ram_byte[0:1];
   reg R_spi_ram_wr;
   reg spi_ram_word_wr;
-  always @(posedge clk_cpu)
-  begin
-    R_spi_ram_wr <= spi_ram_wr;
-    if(spi_ram_wr == 1'b1)
-    begin
-      if(spi_ram_addr[31:24] == 8'hFF)
-        R_cpu_control <= spi_ram_do;
-      else
-        R_spi_ram_byte[spi_ram_addr[0]] <= spi_ram_do;
-      if(R_spi_ram_wr == 1'b0)
-      begin
-        if(spi_ram_addr[31:24] == 8'h00 && spi_ram_addr[0] == 1'b1)
-          spi_ram_word_wr <= 1'b1;
-      end
+  always @(posedge clk_cpu) begin
+    if (reset) begin
+      insert_disk <= 2'b00;
+    end else begin
+      R_spi_ram_wr <= spi_ram_wr;
+      if(spi_ram_wr == 1'b1) begin
+        if(spi_ram_addr[31:24] == 8'hFF) begin
+          R_cpu_control <= spi_ram_do;
+          insert_disk <= spi_ram_do[5:4]; // values 16 and 32 for floppies 1 and 2
+        end else
+          R_spi_ram_byte[spi_ram_addr[0]] <= spi_ram_do;
+        if(R_spi_ram_wr == 1'b0) begin
+          if(spi_ram_addr[31:24] == 8'h00 && spi_ram_addr[0] == 1'b1)
+            spi_ram_word_wr <= 1'b1;
+        end
+      end else
+        spi_ram_word_wr <= 1'b0;
     end
-    else
-      spi_ram_word_wr <= 1'b0;
   end
   wire [15:0] ram_di = { R_spi_ram_byte[0], R_spi_ram_byte[1] }; // to SDRAM chip
 
@@ -895,7 +891,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, mouse_x2, iwm_cs, disk_in_drive[0], disk_sel};
+  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, stepping, insert_disk[0], disk_in_drive};
 
   generate
   if(c_lcd_hex)

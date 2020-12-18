@@ -215,6 +215,7 @@ class osd:
         self.imgtype[0]=0
         if filename.endswith(".dsk") or filename.endswith(".DSK"):
           self.imgtype[0]=1
+        self.ctrl(16) # set insert_disk
         self.update_track()
         self.enable[0]=0
         self.osd_enable(0)
