@@ -89,6 +89,7 @@ class osd:
     p8result = ptr8(addressof(self.spi_result))
     p16t2s = ptr16(addressof(self.track2sector))
     p8it = ptr8(addressof(self.imgtype))
+    self.ctrl(4) # stop cpu
     # ask FPGA for current track number
     self.cs.on()
     self.spi.write_readinto(self.spi_read_trackno,self.spi_result)
@@ -96,7 +97,6 @@ class osd:
     track=p8result[6]
     sectors=12-track//16
     self.diskfile.seek((2-p8it[0])*1024*p16t2s[track])
-    self.ctrl(4) # stop cpu
     # upload data
     self.cs.on()
     self.spi.write(self.spi_write_track)
@@ -213,7 +213,7 @@ class osd:
           self.imgtype[0]=1
           # first 12 bytes of dataIn524 must be constant 0 for .dsk format
           for i in range(12):
-            self.conf_dataIn524[i]=0
+            self.conv_dataIn524[i]=0
         self.update_track()
         self.enable[0]=0
         self.osd_enable(0)
