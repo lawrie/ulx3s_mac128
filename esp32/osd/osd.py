@@ -28,7 +28,7 @@ class osd:
     self.mark = bytearray([32,16,42]) # space, right triangle, asterisk
     self.diskfile=False
     self.imgtype=bytearray(1) # 0:.mac/.bin 1638400 bytes, 1:.dsk 819200 bytes
-    self.conv_dataIn524=bytearray(524)
+    self.conv_dataIn524=bytearray(524) # first 12 bytes must always be 0
     datainmv=memoryview(self.conv_dataIn524)
     self.conv_dataIn512=memoryview(datainmv[12:524])
     self.conv_nibsOut=bytearray(1024)
@@ -108,6 +108,7 @@ class osd:
         else:
           self.diskfile.readinto(self.conv_nibsOut)
         self.spi.write(self.conv_nibsOut)
+      # strange: if last sector is repeated, mac won't boot
       #if sectors<12:
       #  for sector in range(sectors,12):
       #    self.spi.write(self.conv_nibsOut)
@@ -214,9 +215,6 @@ class osd:
         self.imgtype[0]=0
         if filename.endswith(".dsk") or filename.endswith(".DSK"):
           self.imgtype[0]=1
-          # first 12 bytes of dataIn524 must be constant 0 for .dsk format
-          for i in range(12):
-            self.conv_dataIn524[i]=0
         self.update_track()
         self.enable[0]=0
         self.osd_enable(0)
