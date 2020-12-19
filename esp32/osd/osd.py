@@ -213,7 +213,6 @@ class osd:
       if filename.endswith(".mac") or filename.endswith(".MAC") or filename.endswith(".dsk") or filename.endswith(".DSK"):
         self.ctrl(16) # set insert_disk
         self.diskfile = open(filename,"rb")
-        self.diskfile.seek(0,2) # seek EOF to determine length
         self.imgtype[0]=0
         if filename.endswith(".dsk") or filename.endswith(".DSK"):
           self.imgtype[0]=1
