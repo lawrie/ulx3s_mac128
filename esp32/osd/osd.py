@@ -27,7 +27,7 @@ class osd:
     self.exp_names = " KMGTE"
     self.mark = bytearray([32,16,42]) # space, right triangle, asterisk
     self.diskfile=False
-    self.imgtype=bytearray(2) # [0]=0:.mac/.bin 1638400 bytes, [0]=1:.dsk 819200 bytes, [1]=num_sides
+    self.imgtype=bytearray(1) # [0]=0:.mac/.bin 1638400 bytes, [0]=1:.dsk 819200 bytes
     self.conv_dataIn524=bytearray(524) # first 12 bytes must always be 0
     datainmv=memoryview(self.conv_dataIn524)
     self.conv_dataIn512=memoryview(datainmv[12:524])
@@ -96,12 +96,11 @@ class osd:
     self.cs.off()
     track=p8result[6]
     sectors=12-track//16
-    sides=p8it[1]
-    self.diskfile.seek((2-p8it[0])*sides*p16t2s[track]*512)
+    self.diskfile.seek((2-p8it[0])*p16t2s[track]*1024)
     # upload data
     self.cs.on()
     self.spi.write(self.spi_write_track)
-    for side in range(sides):
+    for side in range(2):
       for sector in range(sectors):
         if p8it[0]:
           self.diskfile.readinto(self.conv_dataIn512)
@@ -216,15 +215,8 @@ class osd:
         self.diskfile = open(filename,"rb")
         self.diskfile.seek(0,2) # seek EOF to determine length
         self.imgtype[0]=0
-        sidelen=819200
         if filename.endswith(".dsk") or filename.endswith(".DSK"):
           self.imgtype[0]=1
-          sidelen=409600
-        #self.imgtype[1]=int(self.diskfile.tell())//sidelen # sides
-        self.imgtype[1]=2
-        if filename.startswith("Space"):
-          self.imgtype[1]=1
-        print(self.imgtype[1],"sides")
         self.update_track()
         self.enable[0]=0
         self.osd_enable(0)
