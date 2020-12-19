@@ -26,8 +26,9 @@ class osd:
     self.init_fb()
     self.exp_names = " KMGTE"
     self.mark = bytearray([32,16,42]) # space, right triangle, asterisk
-    self.diskfile=False
-    self.imgtype=bytearray(1) # [0]=0:.mac/.bin 1638400 bytes, [0]=1:.dsk 819200 bytes
+    self.diskfile=[open("main.py","rb"),open("main.py","rb")] # any dummy file that can open
+    self.imgtype=bytearray(2) # [0]=0:.mac/.bin 1638400 bytes, [0]=1:.dsk 819200 bytes
+    self.drive=bytearray(1) # [0]=0:1st drive, [0]=1:2nd drive
     self.conv_dataIn524=bytearray(524) # first 12 bytes must always be 0
     datainmv=memoryview(self.conv_dataIn524)
     self.conv_dataIn512=memoryview(datainmv[12:524])
@@ -42,7 +43,7 @@ class osd:
     self.spi_result = bytearray(7)
     self.spi_enable_osd = bytearray([0,0xFE,0,0,0,1])
     self.spi_write_osd = bytearray([0,0xFD,0,0,0])
-    self.spi_write_track = bytearray([0,0xD1,0,0,0])
+    self.spi_write_track = [bytearray([0,0xD1,0,0,0]),bytearray([0,0xD1,0,0x60,0])]
     self.spi_channel = const(2)
     self.spi_freq = const(3000000)
     self.init_pinout_sd()
@@ -89,24 +90,30 @@ class osd:
     p8result = ptr8(addressof(self.spi_result))
     p16t2s = ptr16(addressof(self.track2sector))
     p8it = ptr8(addressof(self.imgtype))
+    #p8drive = ptr8(addressof(self.drive))
     # ask FPGA for current track number
     self.ctrl(4) # stop cpu
     self.cs.on()
     self.spi.write_readinto(self.spi_read_trackno,self.spi_result)
     self.cs.off()
-    track=p8result[6]
+    drive=0
+    if p8result[6]&0x80:
+      drive=1
+    #drive=p8drive[0]
+    track=p8result[6]&0x7F
     sectors=12-track//16
-    self.diskfile.seek((2-p8it[0])*p16t2s[track]*1024)
+    self.diskfile[drive].seek((2-p8it[drive])*p16t2s[track]*1024)
     # upload data
     self.cs.on()
-    self.spi.write(self.spi_write_track)
+    self.spi.write(self.spi_write_track[drive])
+    #self.spi.write(self.spi_write_track[0])
     for side in range(2):
       for sector in range(sectors):
-        if p8it[0]:
-          self.diskfile.readinto(self.conv_dataIn512)
+        if p8it[drive]:
+          self.diskfile[drive].readinto(self.conv_dataIn512)
           dsk2mac.convert_sector(self.conv_dataIn524,self.conv_nibsOut,track,side,sector)
         else:
-          self.diskfile.readinto(self.conv_nibsOut)
+          self.diskfile[drive].readinto(self.conv_nibsOut)
         self.spi.write(self.conv_nibsOut)
       # strange: if last sector is repeated, mac won't boot
       #if sectors<12:
@@ -118,13 +125,13 @@ class osd:
   @micropython.viper
   def irq_handler(self, pin):
     p8result = ptr8(addressof(self.spi_result))
+    p8drive = ptr8(addressof(self.drive))
     self.cs.on()
     self.spi.write_readinto(self.spi_read_irq, self.spi_result)
     self.cs.off()
     btn_irq = p8result[6]
     if btn_irq&1: # drive 1 request
-      if self.diskfile:
-        self.update_track()
+      self.update_track()
     if btn_irq&0x80: # btn event IRQ flag
       self.cs.on()
       self.spi.write_readinto(self.spi_read_btn, self.spi_result)
@@ -148,7 +155,11 @@ class osd:
             self.timer.deinit() # stop autorepeat
           if btn==33: # btn5 cursor left
             self.updir()
-          if btn==65: # btn6 cursor right
+          if btn==65: # btn6 cursor right 1st drive
+            p8drive[0]=0
+            self.select_entry()
+          if btn==3: # btn1 2nd drive
+            p8drive[0]=1
             self.select_entry()
 
   def start_autorepeat(self, i:int):
@@ -211,11 +222,11 @@ class osd:
     self.show_dir_line(self.fb_cursor - self.fb_topitem)
     if filename:
       if filename.endswith(".mac") or filename.endswith(".MAC") or filename.endswith(".dsk") or filename.endswith(".DSK"):
-        self.ctrl(16) # set insert_disk
-        self.diskfile = open(filename,"rb")
-        self.imgtype[0]=0
+        self.ctrl(16<<self.drive[0]) # set insert_disk
+        self.diskfile[self.drive[0]] = open(filename,"rb")
+        self.imgtype[self.drive[0]]=0
         if filename.endswith(".dsk") or filename.endswith(".DSK"):
-          self.imgtype[0]=1
+          self.imgtype[self.drive[0]]=1
         self.update_track()
         self.enable[0]=0
         self.osd_enable(0)
