@@ -697,8 +697,8 @@ module mac128
     .miso(sd_d[2]), // wifi_gpio12
     .btn(R_btn_joy),
     .irq(spi_irq),
-    .floppy_req(floppy_req_int | floppy_req_int),
-    .floppy_req_type({floppy_req_ext, floppy_req_int ? track_int : track_ext}),
+    .floppy_req(floppy_req_int | floppy_req_ext),
+    .floppy_req_type({floppy_req_ext, floppy_req_ext ? track_ext : track_int}),
     .floppy_in_drive(disk_in_drive),
     .wr(spi_ram_wr),
     .rd(spi_ram_rd),
