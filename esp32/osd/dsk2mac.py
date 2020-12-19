@@ -25,7 +25,7 @@ nib3=bytearray(175)
 # dataIn_ba=bytearray(524)
 # dataOut_ba=bytearray(1024)
 # offset=75 (703 bytes written)
-def sony_nibblize35(dataIn_ba,dataOut_ba,offset:int):
+def sony_nibblize35(dataIn_ba,roffset:int,dataOut_ba,woffset:int):
   dataIn=ptr8(addressof(dataIn_ba))
   nib_ptr=ptr8(addressof(dataOut_ba))
   s2d=ptr8(addressof(sony_to_disk_byte))
@@ -34,7 +34,7 @@ def sony_nibblize35(dataIn_ba,dataOut_ba,offset:int):
   b3=ptr8(addressof(nib3))
   # Copy from the user's buffer to our buffer, while computing
   # the three-byte data checksum
-  i=0
+  i=-12 # prepend 12 bytes of 0
   j=0
   c1=0
   c2=0
@@ -44,26 +44,32 @@ def sony_nibblize35(dataIn_ba,dataOut_ba,offset:int):
     c1=(c1&0xFF)<<1
     if (c1&0x0100)!=0:
       c1+=1
-    val=dataIn[i]
+    val=0
+    if i>=0:
+      val=dataIn[i+roffset]
+      c3+=val
     i+=1
     # ADDX?
-    c3+=val
     if (c1&0x0100)!=0:
       c3+=1
       c1&=0xFF
     b1[j]=val^c1
-    val=dataIn[i]
+    val=0
+    if i>=0:
+      val=dataIn[i+roffset]
+      c2+=val
     i+=1
-    c2+=val
     if c3>0xFF:
       c2+=1
       c3&=0xFF
     b2[j]=val^c3
-    if i==524:
+    if i>=512:
       break
-    val=dataIn[i]
+    val=0
+    if i>=0:
+      val=dataIn[i+roffset]
+      c1+=val
     i+=1
-    c1+=val
     if c2>0xFF:
       c1+=1
       c2&=0xFF
@@ -71,7 +77,7 @@ def sony_nibblize35(dataIn_ba,dataOut_ba,offset:int):
     j+=1
   c4=((c1&0xC0)>>6)|((c2&0xC0)>>4)|((c3&0xC0)>>2)
   b3[174]=0
-  j=offset # offset writing to dataOut
+  j=woffset # offset writing to dataOut
   for i in range(0,175):
     w1=b1[i]&0x3F
     w2=b2[i]&0x3F
@@ -127,7 +133,7 @@ def init_nibsOut(nibsOut):
 # nib=bytearray(1024)
 # track=0-79, side=0-1, sector=0-11
 @micropython.viper
-def convert_sector(dsk,nib,track:int,side:int,sector:int):
+def convert_sector(dsk,roffset:int,nib,track:int,side:int,sector:int):
   nibsOut=ptr8(addressof(nib))
   s2d=ptr8(addressof(sony_to_disk_byte))
   format=0x22 # 0x22 = MacOS double-sided, 0x02 = single sided
@@ -142,4 +148,4 @@ def convert_sector(dsk,nib,track:int,side:int,sector:int):
   # data block
   nibsOut[74]=s2d[sector]    
   # convert the sector data
-  sony_nibblize35(dsk,nib,75)
+  sony_nibblize35(dsk,roffset,nib,75)

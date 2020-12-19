@@ -29,9 +29,7 @@ class osd:
     self.diskfile=[open("main.py","rb"),open("main.py","rb")] # any dummy file that can open
     self.imgtype=bytearray(2) # [0]=0:.mac/.bin 1638400 bytes, [0]=1:.dsk 819200 bytes
     self.drive=bytearray(1) # [0]=0:1st drive, [0]=1:2nd drive
-    self.conv_dataIn524=bytearray(524) # first 12 bytes must always be 0
-    datainmv=memoryview(self.conv_dataIn524)
-    self.conv_dataIn512=memoryview(datainmv[12:524])
+    self.conv_dataIn=bytearray(512)
     self.conv_nibsOut=bytearray(1024)
     dsk2mac.init_nibsOut(self.conv_nibsOut)
     self.track2sector=bytearray(81*2)
@@ -110,8 +108,8 @@ class osd:
     for side in range(2):
       for sector in range(sectors):
         if p8it[drive]:
-          self.diskfile[drive].readinto(self.conv_dataIn512)
-          dsk2mac.convert_sector(self.conv_dataIn524,self.conv_nibsOut,track,side,sector)
+          self.diskfile[drive].readinto(self.conv_dataIn)
+          dsk2mac.convert_sector(self.conv_dataIn,0,self.conv_nibsOut,track,side,sector)
         else:
           self.diskfile[drive].readinto(self.conv_nibsOut)
         self.spi.write(self.conv_nibsOut)
