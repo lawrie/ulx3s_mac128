@@ -195,7 +195,7 @@ module mac128
   wire [23:0] cpu_addr = {cpu_a, 1'b0}; // Byte address
   reg [23:0]  last_rom_addr;
   wire        halt_n = ~R_cpu_control[2] && ~btn[1]; 
-  reg         floppy_req = 0;
+  reg         floppy_req_int, floppy_req_ext;
   // Chip select registers
   reg         via_cs, scc_cs, iwm_cs, scsi_cs, rom_cs, ram_cs;
   
@@ -277,12 +277,11 @@ module mac128
   wire [15:0] iwm_dout;
   reg [1:0]   insert_disk;
   wire [1:0]  disk_in_drive;
-  wire [21:0] extra_rom_read_addr;
-  wire        extra_rom_read_ack = 1;
-  wire [7:0]  extra_rom_read_data; 
-  wire [6:0]  track;
-  wire        side;
-  reg         stepping = 1;
+  wire [15:0] track_buffer_addr;
+  wire [7:0]  track_buffer_data;
+  wire [6:0]  track_int, track_ext;
+  wire [1:0]  side;
+  reg [1:0]   stepping = 2'b11;
 
   // ===============================================================
   // Address decoding
@@ -348,7 +347,7 @@ module mac128
       diag16 <= 0;
     end else begin
       //if (last_rom_addr == 24'h4182A2) diag16 <= diag16 + 1;
-      diag16 <= {side, track};
+      diag16 <= {side[0], track_int};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -554,24 +553,30 @@ module mac128
     .dataOut(iwm_dout),
     .insertDisk(insert_disk),
     .diskInDrive(disk_in_drive),
-    .extraRomReadAddr(extra_rom_read_addr),
-    .extraRomReadAck(extra_rom_read_ack),
-    .extraRomReadData(extra_rom_read_data),
-    .track(track),
+    .trackBufferAddr(track_buffer_addr),
+    .trackBufferData(track_buffer_data),
+    .trackInt(track_int),
+    .trackExt(track_ext),
     .side(side),
     .stepping(stepping)
   );
 
    
-  reg [6:0] old_track;
+  reg [6:0] old_track_int, old_track_ext;
   always @(posedge clk_cpu) begin
     if (reset) begin
-      floppy_req <= 0;
+      floppy_req_int <= 0;
+      floppy_req_ext <= 0;
     end else begin
-      old_track <= track;
-      floppy_req <= 0;
-      if (track != old_track) begin
-        floppy_req <= 1;
+      old_track_int <= track_int;
+      floppy_req_int <= 0;
+      if (track_int != old_track_int) begin
+        floppy_req_int <= 1;
+      end
+      old_track_ext <= track_ext;
+      floppy_req_ext <= 0;
+      if (track_ext != old_track_ext) begin
+        floppy_req_ext <= 1;
       end
     end
   end
@@ -692,8 +697,9 @@ module mac128
     .miso(sd_d[2]), // wifi_gpio12
     .btn(R_btn_joy),
     .irq(spi_irq),
-    .mdv_req(floppy_req),
-    .mdv_req_type(track),
+    .floppy_req(floppy_req_int | floppy_req_int),
+    .floppy_req_type({floppy_req_ext, floppy_req_int ? track_int : track_ext}),
+    .floppy_in_drive(disk_in_drive),
     .wr(spi_ram_wr),
     .rd(spi_ram_rd),
     .addr(spi_ram_addr),
@@ -705,8 +711,8 @@ module mac128
   ram8 ram_disk (
     .clk(clk_cpu),
     .we(disk_ram_write),
-    .addr(disk_ram_write ? spi_ram_addr : extra_rom_read_addr),
-    .dout(extra_rom_read_data),
+    .addr(disk_ram_write ? spi_ram_addr : track_buffer_addr),
+    .dout(track_buffer_data),
     .din(spi_ram_do)
   );
 
@@ -891,7 +897,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, stepping, insert_disk[0], disk_in_drive};
+  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, stepping[0], insert_disk[0], disk_in_drive};
 
   generate
   if(c_lcd_hex)

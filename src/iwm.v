@@ -45,13 +45,13 @@ module iwm(
 	input [1:0] insertDisk,
 	output [1:0] diskInDrive,
 	
-	output [21:0] extraRomReadAddr,
-	input extraRomReadAck,
-	input [7:0] extraRomReadData,
+	output [15:0] trackBufferAddr,
+	input [7:0] trackBufferData,
 
-	output [6:0] track,
-	output side,
-	input stepping
+	output [6:0] trackInt,
+	output [6:0] trackExt,
+	output [1:0] side,
+	input [1:0] stepping
 );
 
 	wire [7:0] dataInLo = dataIn[7:0];
@@ -61,7 +61,7 @@ module iwm(
 	// IWM state
 	reg ca0, ca1, ca2, lstrb, selectExternalDrive, q6, q7;
 	reg ca0Next, ca1Next, ca2Next, lstrbNext, selectExternalDriveNext, q6Next, q7Next;
-	reg advanceDriveHead; // prevents overrun when debugging, does not exit on a real Mac!
+	reg advanceDriveHead;
 	reg [7:0] writeData;
 	reg [7:0] readDataLatch;
 	wire _iwmBusy, _writeUnderrun;
@@ -78,6 +78,9 @@ module iwm(
 	wire [7:0] readDataExt;
 	wire senseExt = readDataExt[7]; // bit 7 doubles as the sense line here
 	
+	reg [15:0] trackBufferAddrInt, trackBufferAddrExt;
+	assign trackBufferAddr = selectExternalDrive ? trackBufferAddrExt : trackBufferAddrInt;
+
 	floppy floppyInt(
 		.clk(clk),
 		._reset(_reset),
@@ -91,17 +94,16 @@ module iwm(
 		._enable(~diskEnableInt),
 		.writeData(writeData),
 		.readData(readDataInt),
-		.useDiskImage(1'b1),
 		.advanceDriveHead(advanceDriveHead),
 		.newByteReady(newByteReadyInt),
 		.insertDisk(insertDisk[0]),
 		.diskInDrive(diskInDrive[0]),
-		.extraRomReadAddr(extraRomReadAddr),
-		.extraRomReadAck(extraRomReadAck),
-		.extraRomReadData(extraRomReadData),
-		.track(track),
-		.side(side),
-		.stepping(stepping));
+		.trackBufferOffset(0),
+		.trackBufferAddr(trackBufferAddrInt),
+		.trackBufferData(trackBufferData),
+		.track(trackInt),
+		.side(side[0]),
+		.stepping(stepping[0]));
 
 	floppy floppyExt(
 		.clk(clk),
@@ -116,12 +118,16 @@ module iwm(
 		._enable(~diskEnableExt),
 		.writeData(writeData),
 		.readData(readDataExt),
-		.useDiskImage(1'b0),
 		.advanceDriveHead(advanceDriveHead),
 		.newByteReady(newByteReadyExt),
 		.insertDisk(insertDisk[1]),
 		.diskInDrive(diskInDrive[1]),
-		.stepping(stepping));
+		.trackBufferOffset(24 * 1024),
+		.trackBufferAddr(trackBufferAddrExt),
+		.trackBufferData(trackBufferData),
+		.track(trackExt),
+		.side(side[1]),
+		.stepping(stepping[1]));
 	
 	wire [7:0] readData = selectExternalDrive ? readDataExt : readDataInt;
 	wire newByteReady = selectExternalDrive ? newByteReadyExt : newByteReadyInt;

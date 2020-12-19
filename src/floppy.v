@@ -73,15 +73,14 @@ module floppy(
 	input [7:0] writeData,		
 	output [7:0] readData,
 	
-	input useDiskImage,
 	input advanceDriveHead,  		// prevents overrun when debugging, does not exist on a real Mac!
 	output reg newByteReady,
 	input insertDisk,
 	output diskInDrive,
-	
-	output [21:0] extraRomReadAddr,
-	input extraRomReadAck,
-	input [7:0] extraRomReadData,
+
+	input [15:0] trackBufferOffset,
+	output [15:0] trackBufferAddr,
+	input [7:0] trackBufferData,
 	output [6:0] track,
 	output side,
 	input stepping
@@ -90,7 +89,7 @@ module floppy(
 	reg [15:0] driveRegs;
 	reg [6:0] driveTrack;
 	reg driveSide;
-	wire [7:0] diskDataIn = extraRomReadData; 	// incoming byte from the floppy disk
+	wire [7:0] diskDataIn = trackBufferData; 	// incoming byte from the floppy disk
 	
 	assign track = driveTrack;
 	assign side = driveSide;
@@ -159,7 +158,8 @@ module floppy(
 	// bytes offset in the current side of the current track, must be less than diskImageTrackSideLen
 	reg [15:0] diskImageHeadOffset;
 	
-	assign extraRomReadAddr = 
+	assign trackBufferAddr = 
+                trackBufferOffset +
 		((driveSide && doubleSidedDisk) ? diskImageTrackSideLen : 0) +
 		diskImageHeadOffset;
 
