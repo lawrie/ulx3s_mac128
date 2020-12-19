@@ -88,7 +88,6 @@ class osd:
     p8result = ptr8(addressof(self.spi_result))
     p16t2s = ptr16(addressof(self.track2sector))
     p8it = ptr8(addressof(self.imgtype))
-    #p8drive = ptr8(addressof(self.drive))
     # ask FPGA for current track number
     self.ctrl(4) # stop cpu
     self.cs.on()
@@ -97,14 +96,12 @@ class osd:
     drive=0
     if p8result[6]&0x80:
       drive=1
-    #drive=p8drive[0]
     track=p8result[6]&0x7F
     sectors=12-track//16
     self.diskfile[drive].seek((2-p8it[drive])*p16t2s[track]*1024)
     # upload data
     self.cs.on()
     self.spi.write(self.spi_write_track[drive])
-    #self.spi.write(self.spi_write_track[0])
     for side in range(2):
       for sector in range(sectors):
         if p8it[drive]:
