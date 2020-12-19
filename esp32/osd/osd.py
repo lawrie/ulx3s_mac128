@@ -29,7 +29,12 @@ class osd:
     self.diskfile=[open("main.py","rb"),open("main.py","rb")] # any dummy file that can open
     self.imgtype=bytearray(2) # [0]=0:.mac/.bin 1638400 bytes, [0]=1:.dsk 819200 bytes
     self.drive=bytearray(1) # [0]=0:1st drive, [0]=1:2nd drive
-    self.conv_dataIn=bytearray(512)
+    self.conv_dataIn12K=bytearray(12*1024)
+    # memoryview for each track//16
+    datainmv=memoryview(self.conv_dataIn12K)
+    self.conv_dataIn=[]
+    for i in range(5):
+      self.conv_dataIn.append(memoryview(datainmv[0:(12-i)*1024]))
     self.conv_nibsOut=bytearray(1024)
     dsk2mac.init_nibsOut(self.conv_nibsOut)
     self.track2sector=bytearray(81*2)
@@ -102,18 +107,18 @@ class osd:
     # upload data
     self.cs.on()
     self.spi.write(self.spi_write_track[drive])
-    for side in range(2):
-      for sector in range(sectors):
-        if p8it[drive]:
-          self.diskfile[drive].readinto(self.conv_dataIn)
-          dsk2mac.convert_sector(self.conv_dataIn,0,self.conv_nibsOut,track,side,sector)
-        else:
-          self.diskfile[drive].readinto(self.conv_nibsOut)
-        self.spi.write(self.conv_nibsOut)
-      # strange: if last sector is repeated, mac won't boot
-      #if sectors<12:
-      #  for sector in range(sectors,12):
-      #    self.spi.write(self.conv_nibsOut)
+    if p8it[drive]: # .dsk
+      self.diskfile[drive].readinto(self.conv_dataIn[track//16])
+      offset=0
+      for side in range(2):
+        for sector in range(sectors):
+          dsk2mac.convert_sector(self.conv_dataIn12K,offset,self.conv_nibsOut,track,side,sector)
+          offset+=512
+          self.spi.write(self.conv_nibsOut)
+    else: # .mac
+      for side in range(2):
+        self.diskfile[drive].readinto(self.conv_dataIn[track//16])
+        self.spi.write(self.conv_dataIn[track//16])
     self.cs.off()
     self.ctrl(0) # resume cpu
 
