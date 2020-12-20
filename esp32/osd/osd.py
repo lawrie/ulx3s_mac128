@@ -102,6 +102,7 @@ class osd:
     if p8result[6]&0x80:
       drive=1
     track=p8result[6]&0x7F
+    #print("Fetching drive " + str(drive) + " track " + str(track))
     sectors=12-track//16
     self.diskfile[drive].seek((2-p8it[drive])*p16t2s[track]*1024)
     # upload data
@@ -227,7 +228,7 @@ class osd:
         self.imgtype[self.drive[0]]=0
         if filename.endswith(".dsk") or filename.endswith(".DSK"):
           self.imgtype[self.drive[0]]=1
-        self.update_track()
+        #self.update_track()
         self.enable[0]=0
         self.osd_enable(0)
       if filename.endswith(".bit"):

@@ -347,7 +347,7 @@ module mac128
       diag16 <= 0;
     end else begin
       //if (last_rom_addr == 24'h4182A2) diag16 <= diag16 + 1;
-      diag16 <= {side[0], track_int};
+      diag16 <= {side[1], track_ext, side[0], track_int};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -570,12 +570,12 @@ module mac128
     end else begin
       old_track_int <= track_int;
       floppy_req_int <= 0;
-      if (track_int != old_track_int) begin
+      if (track_int != old_track_int || insert_disk[0]) begin
         floppy_req_int <= 1;
       end
       old_track_ext <= track_ext;
       floppy_req_ext <= 0;
-      if (track_ext != old_track_ext) begin
+      if (track_ext != old_track_ext || insert_disk[1]) begin
         floppy_req_ext <= 1;
       end
     end
