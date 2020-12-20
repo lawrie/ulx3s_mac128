@@ -11,7 +11,7 @@
 # SPI_write(buffer)
 # FPGA SPI slave will accept image and start it
 
-from machine import SPI, Pin, SDCard, Timer
+from machine import SPI, Pin, SDCard, Timer, freq
 from micropython import const, alloc_emergency_exception_buf
 from uctypes import addressof
 from struct import unpack
@@ -84,8 +84,10 @@ class osd:
   def init_pinout_sd(self):
     self.gpio_cs   = const(17)
     self.gpio_sck  = const(16)
-    self.gpio_mosi = const(4)
-    self.gpio_miso = const(12)
+    #self.gpio_mosi = const(4)
+    #self.gpio_miso = const(12)
+    self.gpio_mosi = const(25)
+    self.gpio_miso = const(26)
     self.gpio_led  = const(5)
 
   @micropython.viper
@@ -102,14 +104,17 @@ class osd:
     if p8result[6]&0x80:
       drive=1
     track=p8result[6]&0x7F
+    if track>79:
+      track=79
+    trackdiv16=track//16
     #print("Fetching drive " + str(drive) + " track " + str(track))
-    sectors=12-track//16
+    sectors=12-trackdiv16
     self.diskfile[drive].seek((2-p8it[drive])*p16t2s[track]*1024)
     # upload data
     self.cs.on()
     self.spi.write(self.spi_write_track[drive])
     if p8it[drive]: # .dsk
-      self.diskfile[drive].readinto(self.conv_dataIn[track//16])
+      self.diskfile[drive].readinto(self.conv_dataIn[trackdiv16])
       offset=0
       for side in range(2):
         for sector in range(sectors):
@@ -118,8 +123,8 @@ class osd:
           self.spi.write(self.conv_nibsOut)
     else: # .mac
       for side in range(2):
-        self.diskfile[drive].readinto(self.conv_dataIn[track//16])
-        self.spi.write(self.conv_dataIn[track//16])
+        self.diskfile[drive].readinto(self.conv_dataIn[trackdiv16])
+        self.spi.write(self.conv_dataIn[trackdiv16])
     self.cs.off()
     self.ctrl(0) # resume cpu
 
@@ -223,12 +228,12 @@ class osd:
     self.show_dir_line(self.fb_cursor - self.fb_topitem)
     if filename:
       if filename.endswith(".mac") or filename.endswith(".MAC") or filename.endswith(".dsk") or filename.endswith(".DSK"):
-        self.ctrl(16<<self.drive[0]) # set insert_disk
         self.diskfile[self.drive[0]] = open(filename,"rb")
         self.imgtype[self.drive[0]]=0
         if filename.endswith(".dsk") or filename.endswith(".DSK"):
           self.imgtype[self.drive[0]]=1
         #self.update_track()
+        self.ctrl(16<<self.drive[0]) # set insert_disk
         self.enable[0]=0
         self.osd_enable(0)
       if filename.endswith(".bit"):
@@ -478,7 +483,9 @@ def poke(addr,data):
 #bitstream="/sd/mac/bitstreams/ulx3s_v20_85f_mac128.bit"
 bitstream="/xyz.bit"
 try:
-  os.mount(SDCard(slot=3),"/sd")
+  freq(240*1000*1000) # 80/160/240 MHz, faster CPU = faster SD card
+  #os.mount(SDCard(slot=3),"/sd") # 1-bit SD mode
+  os.mount(SDCard(),"/sd") # 4-bit SD mode (mac bitstream must be flashed or already loaded)
   import ecp5
   ecp5.prog(bitstream)
 except:

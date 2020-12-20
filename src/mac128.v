@@ -47,6 +47,7 @@ module mac128
 
   inout         sd_clk, sd_cmd,
   inout   [3:0] sd_d,
+  inout         sd_cdn,
 
   output        sdram_csn,  // chip select
   output        sdram_clk,  // clock to SDRAM
@@ -679,8 +680,9 @@ module mac128
   wire  [7:0] spi_ram_di = spi_ram_addr[31:24]==8'hD1 ? spi_floppy_do : (spi_ram_addr[0] ? ram_dout[7:0] : ram_dout[15:8]);
   wire  [7:0] spi_ram_do;
 
-  assign sd_d[0] = 1'bz;
-  assign sd_d[3] = 1'bz; // FPGA pin pullup sets SD card inactive at SPI bus
+  //assign sd_d[0] = 1'bz;
+  //assign sd_d[3] = 1'bz; // FPGA pin pullup sets SD card inactive at SPI bus
+  assign sd_cdn = sd_clk|sd_cmd|(|sd_d); // force usage to activate pull-up required for 4-bit SD mode
 
   wire spi_irq;
   spi_ram_btn
@@ -693,8 +695,10 @@ module mac128
     .clk(clk_cpu),
     .csn(~wifi_gpio17),
     .sclk(wifi_gpio16),
-    .mosi(sd_d[1]), // wifi_gpio4
-    .miso(sd_d[2]), // wifi_gpio12
+    //.mosi(sd_d[1]), // wifi_gpio4
+    //.miso(sd_d[2]), // wifi_gpio12
+    .mosi(gn[11]), // wifi_gpio25
+    .miso(gp[11]), // wifi_gpio26
     .btn(R_btn_joy),
     .irq(spi_irq),
     .floppy_req(floppy_req_int | floppy_req_ext),
@@ -873,7 +877,10 @@ module mac128
     .i_g(green),
     .i_b(blue ),
     .i_hsync(~hSync), .i_vsync(~vSync), .i_blank(~vga_de),
-    .i_csn(~wifi_gpio17), .i_sclk(wifi_gpio16), .i_mosi(sd_d[1]), // .o_miso(),
+    .i_csn(~wifi_gpio17), .i_sclk(wifi_gpio16),
+    //.i_mosi(sd_d[1]), // wifi_gpio4
+    .i_mosi(gn[11]), // wifi_gpio25
+    // .o_miso(),
     .o_r(osd_vga_r), .o_g(osd_vga_g), .o_b(osd_vga_b),
     .o_hsync(osd_vga_hsync), .o_vsync(osd_vga_vsync), .o_blank(osd_vga_blank)
   );
