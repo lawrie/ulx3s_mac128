@@ -18,7 +18,9 @@ module mac128
   parameter c_mhz         = 25000000, // Clock speed of CPU clock
   parameter c_screen_base = 24'h3fa700,
   parameter c_screen_top =  c_screen_base + 24'h5580,
-  parameter c_init_file = "../roms/macplus.mem"
+  parameter c_init_file = "../roms/macplus.mem",
+  parameter c_sound_buffer = 24'h3ffd00,
+  parameter c_sound_len = 370
 )
 (
   input         clk_25mhz,
@@ -338,16 +340,11 @@ module mac128
 
   wire load_t2 = via_cs && !cpu_rw && !cpu_uds_n && cpu_a[12:9] == 4'h9;
 
-  // Audio out (not correct)
-  assign audio_l = {4{via_b_data_out[7]}};
-  assign audio_r = audio_l;
-
   // Diagnostics
   always @(posedge clk_cpu) begin
     if (reset) begin
       diag16 <= 0;
     end else begin
-      //if (last_rom_addr == 24'h4182A2) diag16 <= diag16 + 1;
       diag16 <= {side[1], track_ext, side[0], track_int};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
@@ -855,6 +852,54 @@ module mac128
     .vid_dout(vid_b_dout)
   );
 
+  // ===============================================================
+  // Audio 
+  // ===============================================================
+
+  reg [10:0] audio_cnt;
+  reg [8:0]  audio_addr;
+  wire [7:0] audio_dout;
+  wire audio_cs = (cpu_addr >= c_sound_buffer) && (cpu_addr < (c_sound_buffer + (c_sound_len * 2)));
+  wire [9:0] snd_addr = cpu_addr - c_sound_buffer;
+
+  // Dual port RAM for audio buffer, mirrors sound bytes from sound buffer
+  audio_ram audio_ram_i (
+    .clk(clk_cpu),
+    .we(audio_cs && !cpu_rw && !cpu_uds_n),
+    .waddr(snd_addr[9:1]),
+    .raddr(audio_addr),
+    .din(cpu_dout[15:8] - 128), // Store signed value
+    .dout(audio_dout)
+  );
+
+  // Increment the audio read address 370 times per video frame
+  always @(posedge clk_cpu) begin
+    audio_cnt <= audio_cnt + 1;
+    if (vSync == 0 && old_vSync == 1) begin
+      audio_cnt <= 0;
+      audio_addr <= 0;
+    end
+    if (audio_cnt == 1125) begin
+      audio_cnt <= 0;
+      audio_addr <= audio_addr + 1;
+      if (audio_addr == c_sound_len -1) audio_addr <= 0;
+    end
+  end
+
+  // Use sigma-delta dac to get single-bit output
+  wire aud_l, aud_r;
+  wire [10:0] audio = {{3{audio_dout[7]}}, audio_dout}; // Sign extend to 11 bits
+  sigma_delta_dac dac (
+    .clk(clk_cpu),
+    .ldatasum({audio, 4'b0}), // Extend to 14 bits
+    .rdatasum({audio, 4'b0}),
+    .left(aud_l),
+    .right(aud_r)
+  );
+
+  // Use VIA sound enable and volume
+  assign audio_l = via_b_data_out[7] == 0 ? (aud_l ? {via_a_data_out[2:0], 1'b0} : 0) : 0;
+  assign audio_r = audio_l;
 
   // ===============================================================
   // SPI Slave for OSD display
@@ -904,7 +949,7 @@ module mac128
   // ===============================================================
   // Diagnostic leds and lcd
   // ===============================================================
-  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, stepping[0], insert_disk[0], disk_in_drive};
+  assign led = {scc_irq, via_irq, mouse_button, mouse_y2, insert_disk, disk_in_drive};
 
   generate
   if(c_lcd_hex)
