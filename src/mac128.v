@@ -158,10 +158,10 @@ module mac128
     genvar i;
     if (c_diag) begin
       for(i = 0; i < 4; i = i+1) begin
-        assign gn[17-i] = diag16[8+i];
-        assign gp[17-i] = diag16[12+i];
-        assign gn[24-i] = diag16[i];
-        assign gp[24-i] = diag16[4+i];
+        assign gn[10-i] = diag16[15-i];
+        assign gp[10-i] = diag16[11-i];
+        assign gn[3-i] = diag16[7-i];
+        assign gp[3-i] = diag16[3-i];
       end
     end
   endgenerate
@@ -216,7 +216,6 @@ module mac128
   reg [6:0]   via_ifr;                                               // Interupt flag register
   reg [6:0]   via_ier;                                               // Interupt enable register
   reg [15:0]  via_timer1_count, via_timer1_latch, via_timer2_count;  // Timer registers
-  reg [7:0]   kbd_out_data = 0;                                      // Keyboard output data
   reg [7:0]   via_data_out_hi;
   reg [7:0]   via_timer2_latch_low;
   reg         via_timer2_armed;
@@ -345,7 +344,8 @@ module mac128
     if (reset) begin
       diag16 <= 0;
     end else begin
-      diag16 <= {side[1], track_ext, side[0], track_int};
+      //diag16 <= {side[1], track_ext, side[0], track_int};
+      diag16 <= {capslock, kbd_out_strobe, kbd_in_strobe, via_sr};
       if (rom_cs) last_rom_addr <= cpu_addr;
     end
   end
@@ -779,21 +779,24 @@ module mac128
   // Keyboard
   // ===============================================================
 
+  assign gp[22] = 1'b1;
+  assign gn[22] = 1'b1;
+
   // Get PS/2 keyboard events
   ps2key ps2key_i (
     .clk(clk_cpu),
-    .ps2_clk(ps2Clk),
-    .ps2_data(ps2Data),
+    .ps2_clk(gp[21]),
+    .ps2_data(gn[21]),
     .ps2_key(ps2_key)
   );
 
   ps2_kbd ps2_kbd_i (
     .clk(clk_cpu),
     .reset(reset),
-    .ce(1),
+    .ce(cep),
     .ps2_key(ps2_key),
     .capslock(capslock),
-    .data_out(kbd_out_data),
+    .data_out(via_sr),
     .strobe_out(kbd_out_strobe),
     .data_in(kbd_in_data),
     .strobe_in(kbd_in_strobe)
