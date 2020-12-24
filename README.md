@@ -20,7 +20,7 @@ A difference between this implementation and the others is that SDRAM access is 
 
 The top level Verilog module, the video circuit and the BRAM buffer implementations, are all new for the this version. Several modules used by PlusToo and the Mist/Mister variants have been dropped and the VIA and SCC chip implementation are cut-down versions in the top-level module.
 
-The mouse and keyboard code comes mainly from the PlusToo and Mist versions, and the floppy disk implementation is similar to the Plustoo implementation and uses versions of iwm.v and floppy.v from that.
+The mouse and keyboard code comes mainly from the PlusToo and Mist versions, and the floppy disk implementation is similar to the PlusToo implementation and uses versions of iwm.v and floppy.v from that.
 
 The floppy disk imlementation differs quite a bit from the PlusToo and other variants, in that it uses a BRAM track buffer rather than holding a whole floppy disk image in ROM or SDRAM. When a new track is required, it is requested from the ESP32. This requires halting the CPU, as sending the data from the ESP32 takes slighly longer than stepping to a new track took on the real hardware. Another difference in the floppy disk implementation is that there is not attempt to spin the disks at the speed of the real hardware, which was 128 clock cycles per byte. Instead delivery of bytes is synchronized with reads from the ROM.
 
@@ -69,7 +69,7 @@ When you have inserted a system floppy, the Finder should start. You will see th
 
 The Disk605.dsk system disk image is available in the roms directory.
 
-There are many disk images in .dsk format on the Internet, including [Mac Plus games]( https://www.macintoshrepository.org/24802-mac-plus-floppy-with-games) and [Space Invaders]( https://www.macintoshrepository.org/4826-space-invaders). The Space Invaders disk is a 400KB system disk, so contains the Finder and loads fast.
+There are many disk images in .dsk format on the Internet, including [Mac Plus games]( https://www.macintoshrepository.org/24802-mac-plus-floppy-with-games), [Space Invaders]( https://www.macintoshrepository.org/4826-space-invaders) and [Mouse Stampede](https://macintoshgarden.org/games/mouse-stampede-20). The Space Invaders disk is a 400KB system disk, so contains the Finder and loads fast. The Mouse Stampede disk is a bootable System 6.08 disk.
 
 Many games are playable with just the mouse.
 
