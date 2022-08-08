@@ -11,7 +11,7 @@ prog: $(BUILDDIR)/toplevel.bit
 
 $(BUILDDIR)/toplevel.json: $(VERILOG)
 	mkdir -p $(BUILDDIR)
-	yosys -p "synth_ecp5 -abc9 -json $@" $^
+	yosys -p "synth_ecp5 -abc9 -top mac128 -json $@" $^
 
 $(BUILDDIR)/%.config: $(PIN_DEF) $(BUILDDIR)/toplevel.json
 	nextpnr-ecp5 --${DEVICE} --package CABGA381 \

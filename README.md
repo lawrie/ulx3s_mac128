@@ -34,7 +34,7 @@ Currently there is a problem with the floppy disk reading that sometimes causes 
 
 The CPU halting causes the mouse to stop working when the floppy disk is accessed. This happens on the real hardware but not as often.
 
-The keyboard timing is wrong which means that you have to hold a key down for a while until is is recognized and then it auto-repeats and does not stop until you press a key again. However, a lot od Mac software uses only the mouse and does not require the keyboard.
+The keyboard timing is wrong which means that you have to hold a key down for a while until is is recognized and then it auto-repeats and does not stop until you press a key again. However, a lot of Mac software uses only the mouse and does not require the keyboard.
 
 ## Installation
 
